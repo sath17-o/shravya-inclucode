@@ -63,3 +63,14 @@ npm --prefix frontend run test:e2e:install
 `SHRAVYA_PROVIDER_MODE` accepts `live`, `cached`, or `demo`. Phase 1 exposes configuration only; no paid or external provider is called.
 
 See [system overview](docs/architecture/system-overview.md) and [test strategy](docs/testing/test-strategy.md) for Phase 1 boundaries.
+## Photosynthesis judge demo
+
+From `backend`, first migrate the configured database, then create or restore the deterministic baseline:
+
+```powershell
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m scripts.seed_photosynthesis_demo
+..\.venv\Scripts\python.exe -m scripts.seed_photosynthesis_demo --reset
+```
+
+The baseline contains Class 7 Science with Approved context v1 and hidden Draft context v2. Use `POST /api/v1/teacher/contexts/{v2_id}/submit-for-review`, then `POST /api/v1/teacher/contexts/{v2_id}/approve`; `GET /api/v1/student/courses/{course_id}/lesson-overview` then changes from v1 to v2. Reset restores v1 visibility and the ready v1 artifact.

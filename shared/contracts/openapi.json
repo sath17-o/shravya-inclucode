@@ -1,75 +1,2425 @@
 {
-  "components": {
-    "schemas": {
-      "HealthPayload": {
-        "properties": {
-          "environment": {
-            "title": "Environment",
-            "type": "string"
-          },
-          "provider_mode": {
-            "title": "Provider Mode",
-            "type": "string"
-          },
-          "service": {
-            "const": "shravya-backend",
-            "default": "shravya-backend",
-            "title": "Service",
-            "type": "string"
-          }
-        },
-        "required": [
-          "environment",
-          "provider_mode"
-        ],
-        "title": "HealthPayload",
-        "type": "object"
-      },
-      "SuccessResponse_HealthPayload_": {
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/HealthPayload"
-          },
-          "status": {
-            "const": "success",
-            "default": "success",
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "title": "SuccessResponse[HealthPayload]",
-        "type": "object"
-      }
-    }
-  },
+  "openapi": "3.1.0",
   "info": {
     "title": "Shravya API",
     "version": "0.1.0"
   },
-  "openapi": "3.1.0",
   "paths": {
     "/api/v1/health": {
       "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health",
         "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SuccessResponse_HealthPayload_"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/courses/{course_id}/contexts": {
+      "get": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "List Contexts",
+        "operationId": "list_teacher_contexts",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_list_ContextSummaryResponse__"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/completeness": {
+      "get": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Get Completeness Route",
+        "operationId": "get_context_completeness",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_CompletenessResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/review-events": {
+      "get": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "History",
+        "operationId": "get_review_events",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_list_ReviewEventResponse__"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}": {
+      "get": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Detail",
+        "operationId": "get_teacher_context",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ContextDetailResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/submit-for-review": {
+      "post": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Submit",
+        "operationId": "submit_context_review",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReviewNoteRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
           }
         },
-        "summary": "Health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_SubmitResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/return-to-draft": {
+      "post": {
         "tags": [
-          "system"
-        ]
+          "curriculum"
+        ],
+        "summary": "Return Draft",
+        "operationId": "return_context_draft",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReviewNoteRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ContextSummaryResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/approve": {
+      "post": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Approve",
+        "operationId": "approve_context",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ApprovalResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/teacher/contexts/{context_id}/copy-to-new-draft": {
+      "post": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Copy",
+        "operationId": "copy_context_draft",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CopyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ContextSummaryResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/courses/{course_id}/lesson-overview": {
+      "get": {
+        "tags": [
+          "curriculum"
+        ],
+        "summary": "Overview",
+        "operationId": "student_lesson_overview",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StudentLessonOverviewResponse_"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The requested action is not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested curriculum record was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The curriculum context is in a conflicting state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The curriculum request could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ASRMisrecognitionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "detected_text": {
+            "type": "string",
+            "title": "Detected Text"
+          },
+          "normalized_text": {
+            "type": "string",
+            "title": "Normalized Text"
+          },
+          "source_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "detected_text",
+          "normalized_text",
+          "source_note"
+        ],
+        "title": "ASRMisrecognitionResponse"
+      },
+      "ApprovalResponse": {
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ContextSummaryResponse"
+          },
+          "newly_staled_artifact_count": {
+            "type": "integer",
+            "title": "Newly Staled Artifact Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "context",
+          "newly_staled_artifact_count"
+        ],
+        "title": "ApprovalResponse"
+      },
+      "ApprovedMaterialResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "material_type": {
+            "type": "string",
+            "title": "Material Type"
+          },
+          "source_label": {
+            "type": "string",
+            "title": "Source Label"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "teacher_review_status": {
+            "$ref": "#/components/schemas/TeacherReviewStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "material_type",
+          "source_label",
+          "content",
+          "language",
+          "sequence",
+          "teacher_review_status"
+        ],
+        "title": "ApprovedMaterialResponse"
+      },
+      "ChapterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/LessonResponse"
+            },
+            "type": "array",
+            "title": "Lessons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sequence"
+        ],
+        "title": "ChapterResponse"
+      },
+      "CompletenessIssueResponse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message_key": {
+            "type": "string",
+            "title": "Message Key"
+          },
+          "recovery_action": {
+            "type": "string",
+            "title": "Recovery Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "section",
+          "field",
+          "message_key",
+          "recovery_action"
+        ],
+        "title": "CompletenessIssueResponse"
+      },
+      "CompletenessResponse": {
+        "properties": {
+          "context_version_id": {
+            "type": "string",
+            "title": "Context Version Id"
+          },
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/CompletenessIssueResponse"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "completed_sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Completed Sections"
+          },
+          "incomplete_sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Incomplete Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "context_version_id",
+          "is_complete",
+          "issues",
+          "completed_sections",
+          "incomplete_sections"
+        ],
+        "title": "CompletenessResponse"
+      },
+      "ConceptRelationshipResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source_concept_id": {
+            "type": "string",
+            "title": "Source Concept Id"
+          },
+          "target_concept_id": {
+            "type": "string",
+            "title": "Target Concept Id"
+          },
+          "relationship_type": {
+            "type": "string",
+            "title": "Relationship Type"
+          },
+          "teacher_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teacher Note"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source_concept_id",
+          "target_concept_id",
+          "relationship_type",
+          "teacher_note",
+          "sequence"
+        ],
+        "title": "ConceptRelationshipResponse"
+      },
+      "ConceptResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "concept_key": {
+            "type": "string",
+            "title": "Concept Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "malayalam_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Title"
+          },
+          "definition": {
+            "type": "string",
+            "title": "Definition"
+          },
+          "malayalam_definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Definition"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "concept_key",
+          "title",
+          "malayalam_title",
+          "definition",
+          "malayalam_definition",
+          "sequence"
+        ],
+        "title": "ConceptResponse"
+      },
+      "ContextDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "teacher_review_status": {
+            "$ref": "#/components/schemas/TeacherReviewStatus"
+          },
+          "copied_from_context_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copied From Context Version Id"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterResponse"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "completeness": {
+            "$ref": "#/components/schemas/CompletenessResponse"
+          },
+          "review_events": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewEventResponse"
+            },
+            "type": "array",
+            "title": "Review Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "course_id",
+          "version_number",
+          "teacher_review_status",
+          "chapters",
+          "completeness",
+          "review_events"
+        ],
+        "title": "ContextDetailResponse"
+      },
+      "ContextReviewEventType": {
+        "type": "string",
+        "enum": [
+          "draft_created",
+          "submitted_for_review",
+          "returned_to_draft",
+          "approved",
+          "copied_to_new_draft"
+        ],
+        "title": "ContextReviewEventType"
+      },
+      "ContextSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "teacher_review_status": {
+            "$ref": "#/components/schemas/TeacherReviewStatus"
+          },
+          "copied_from_context_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copied From Context Version Id"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "course_id",
+          "version_number",
+          "teacher_review_status"
+        ],
+        "title": "ContextSummaryResponse"
+      },
+      "CopyRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "CopyRequest"
+      },
+      "CourseResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "class_level": {
+            "type": "integer",
+            "title": "Class Level"
+          },
+          "grade_band": {
+            "type": "string",
+            "title": "Grade Band"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "subject",
+          "class_level",
+          "grade_band"
+        ],
+        "title": "CourseResponse"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "error",
+            "title": "Status",
+            "default": "error"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "message_key": {
+            "type": "string",
+            "title": "Message Key"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "recoverable": {
+            "type": "boolean",
+            "title": "Recoverable"
+          },
+          "next_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Actions"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "message_key",
+          "recoverable"
+        ],
+        "title": "ErrorResponse"
+      },
+      "GlossaryTermResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "canonical_term": {
+            "type": "string",
+            "title": "Canonical Term"
+          },
+          "malayalam_support_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Support Label"
+          },
+          "definition": {
+            "type": "string",
+            "title": "Definition"
+          },
+          "malayalam_explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Explanation"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/TermAliasResponse"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "misrecognitions": {
+            "items": {
+              "$ref": "#/components/schemas/ASRMisrecognitionResponse"
+            },
+            "type": "array",
+            "title": "Misrecognitions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "canonical_term",
+          "malayalam_support_label",
+          "definition",
+          "malayalam_explanation",
+          "sequence"
+        ],
+        "title": "GlossaryTermResponse"
+      },
+      "HealthPayload": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "const": "shravya-backend",
+            "title": "Service",
+            "default": "shravya-backend"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment"
+          },
+          "provider_mode": {
+            "type": "string",
+            "title": "Provider Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "environment",
+          "provider_mode"
+        ],
+        "title": "HealthPayload"
+      },
+      "LearningObjectiveResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "objective_text": {
+            "type": "string",
+            "title": "Objective Text"
+          },
+          "malayalam_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Text"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "objective_text",
+          "malayalam_text",
+          "sequence"
+        ],
+        "title": "LearningObjectiveResponse"
+      },
+      "LessonResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "primary_language": {
+            "type": "string",
+            "title": "Primary Language"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/LearningObjectiveResponse"
+            },
+            "type": "array",
+            "title": "Objectives"
+          },
+          "approved_materials": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovedMaterialResponse"
+            },
+            "type": "array",
+            "title": "Approved Materials"
+          },
+          "glossary_terms": {
+            "items": {
+              "$ref": "#/components/schemas/GlossaryTermResponse"
+            },
+            "type": "array",
+            "title": "Glossary Terms"
+          },
+          "concepts": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptResponse"
+            },
+            "type": "array",
+            "title": "Concepts"
+          },
+          "concept_relationships": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptRelationshipResponse"
+            },
+            "type": "array",
+            "title": "Concept Relationships"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionResponse"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sequence",
+          "primary_language",
+          "description"
+        ],
+        "title": "LessonResponse"
+      },
+      "QuestionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "related_concept_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Concept Id"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          },
+          "source_label": {
+            "type": "string",
+            "title": "Source Label"
+          },
+          "question_text": {
+            "type": "string",
+            "title": "Question Text"
+          },
+          "malayalam_question_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Question Text"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "teacher_review_status": {
+            "$ref": "#/components/schemas/TeacherReviewStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "related_concept_id",
+          "source_type",
+          "source_label",
+          "question_text",
+          "malayalam_question_text",
+          "sequence",
+          "year",
+          "marks",
+          "teacher_review_status"
+        ],
+        "title": "QuestionResponse"
+      },
+      "ReviewEventResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/ContextReviewEventType"
+          },
+          "actor_role": {
+            "type": "string",
+            "title": "Actor Role"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "actor_role",
+          "note",
+          "created_at"
+        ],
+        "title": "ReviewEventResponse"
+      },
+      "ReviewNoteRequest": {
+        "properties": {
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          }
+        },
+        "type": "object",
+        "title": "ReviewNoteRequest"
+      },
+      "StudentASRMisrecognitionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "detected_text": {
+            "type": "string",
+            "title": "Detected Text"
+          },
+          "normalized_text": {
+            "type": "string",
+            "title": "Normalized Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "detected_text",
+          "normalized_text"
+        ],
+        "title": "StudentASRMisrecognitionResponse"
+      },
+      "StudentApprovedMaterialResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "material_type": {
+            "type": "string",
+            "title": "Material Type"
+          },
+          "source_label": {
+            "type": "string",
+            "title": "Source Label"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "material_type",
+          "source_label",
+          "content",
+          "language",
+          "sequence"
+        ],
+        "title": "StudentApprovedMaterialResponse"
+      },
+      "StudentChapterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/StudentLessonResponse"
+            },
+            "type": "array",
+            "title": "Lessons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sequence"
+        ],
+        "title": "StudentChapterResponse"
+      },
+      "StudentConceptRelationshipResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source_concept_id": {
+            "type": "string",
+            "title": "Source Concept Id"
+          },
+          "target_concept_id": {
+            "type": "string",
+            "title": "Target Concept Id"
+          },
+          "relationship_type": {
+            "type": "string",
+            "title": "Relationship Type"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source_concept_id",
+          "target_concept_id",
+          "relationship_type",
+          "sequence"
+        ],
+        "title": "StudentConceptRelationshipResponse"
+      },
+      "StudentGlossaryTermResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "canonical_term": {
+            "type": "string",
+            "title": "Canonical Term"
+          },
+          "malayalam_support_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Support Label"
+          },
+          "definition": {
+            "type": "string",
+            "title": "Definition"
+          },
+          "malayalam_explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Explanation"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/StudentTermAliasResponse"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "misrecognitions": {
+            "items": {
+              "$ref": "#/components/schemas/StudentASRMisrecognitionResponse"
+            },
+            "type": "array",
+            "title": "Misrecognitions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "canonical_term",
+          "malayalam_support_label",
+          "definition",
+          "malayalam_explanation",
+          "sequence"
+        ],
+        "title": "StudentGlossaryTermResponse"
+      },
+      "StudentLessonOverviewResponse": {
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/CourseResponse"
+          },
+          "is_ready": {
+            "type": "boolean",
+            "title": "Is Ready"
+          },
+          "selected_context_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Context Id"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/StudentChapterResponse"
+            },
+            "type": "array",
+            "title": "Chapters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course",
+          "is_ready"
+        ],
+        "title": "StudentLessonOverviewResponse"
+      },
+      "StudentLessonResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "primary_language": {
+            "type": "string",
+            "title": "Primary Language"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/LearningObjectiveResponse"
+            },
+            "type": "array",
+            "title": "Objectives"
+          },
+          "approved_materials": {
+            "items": {
+              "$ref": "#/components/schemas/StudentApprovedMaterialResponse"
+            },
+            "type": "array",
+            "title": "Approved Materials"
+          },
+          "glossary_terms": {
+            "items": {
+              "$ref": "#/components/schemas/StudentGlossaryTermResponse"
+            },
+            "type": "array",
+            "title": "Glossary Terms"
+          },
+          "concepts": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptResponse"
+            },
+            "type": "array",
+            "title": "Concepts"
+          },
+          "concept_relationships": {
+            "items": {
+              "$ref": "#/components/schemas/StudentConceptRelationshipResponse"
+            },
+            "type": "array",
+            "title": "Concept Relationships"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/StudentQuestionResponse"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "sequence",
+          "primary_language",
+          "description"
+        ],
+        "title": "StudentLessonResponse"
+      },
+      "StudentQuestionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "related_concept_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Concept Id"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          },
+          "source_label": {
+            "type": "string",
+            "title": "Source Label"
+          },
+          "question_text": {
+            "type": "string",
+            "title": "Question Text"
+          },
+          "malayalam_question_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Malayalam Question Text"
+          },
+          "sequence": {
+            "type": "integer",
+            "title": "Sequence"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "related_concept_id",
+          "source_type",
+          "source_label",
+          "question_text",
+          "malayalam_question_text",
+          "sequence",
+          "year",
+          "marks"
+        ],
+        "title": "StudentQuestionResponse"
+      },
+      "StudentTermAliasResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "normalized_alias": {
+            "type": "string",
+            "title": "Normalized Alias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "alias",
+          "normalized_alias"
+        ],
+        "title": "StudentTermAliasResponse"
+      },
+      "SubmitResponse": {
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ContextSummaryResponse"
+          },
+          "completeness": {
+            "$ref": "#/components/schemas/CompletenessResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "context",
+          "completeness"
+        ],
+        "title": "SubmitResponse"
+      },
+      "SuccessResponse_ApprovalResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ApprovalResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ApprovalResponse]"
+      },
+      "SuccessResponse_CompletenessResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CompletenessResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[CompletenessResponse]"
+      },
+      "SuccessResponse_ContextDetailResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ContextDetailResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ContextDetailResponse]"
+      },
+      "SuccessResponse_ContextSummaryResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ContextSummaryResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ContextSummaryResponse]"
+      },
+      "SuccessResponse_HealthPayload_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealthPayload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[HealthPayload]"
+      },
+      "SuccessResponse_StudentLessonOverviewResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StudentLessonOverviewResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[StudentLessonOverviewResponse]"
+      },
+      "SuccessResponse_SubmitResponse_": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SubmitResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[SubmitResponse]"
+      },
+      "SuccessResponse_list_ContextSummaryResponse__": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ContextSummaryResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[list[ContextSummaryResponse]]"
+      },
+      "SuccessResponse_list_ReviewEventResponse__": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewEventResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[list[ReviewEventResponse]]"
+      },
+      "TeacherReviewStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "NEEDS_REVIEW",
+          "APPROVED"
+        ],
+        "title": "TeacherReviewStatus"
+      },
+      "TermAliasResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "normalized_alias": {
+            "type": "string",
+            "title": "Normalized Alias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "alias",
+          "normalized_alias"
+        ],
+        "title": "TermAliasResponse"
       }
     }
   }

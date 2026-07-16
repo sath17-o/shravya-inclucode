@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,6 +12,12 @@ from app.contracts.teacher_review import ContextCompletenessResult, DomainError
 from app.models.foundation import ContextReviewEvent, CourseContextVersion
 from app.repositories.curriculum import CurriculumRepository
 from app.services.context_completeness import ContextCompletenessService
+
+
+@dataclass(frozen=True)
+class ContextApprovalResult:
+    context: CourseContextVersion
+    newly_staled_artifact_count: int
 
 
 def assert_context_mutable(context: CourseContextVersion) -> None:
@@ -87,6 +94,11 @@ class TeacherReviewService:
             raise
 
     def approve(self, context_version_id: str, actor_role: str = "teacher") -> CourseContextVersion:
+        return self.approve_with_result(context_version_id, actor_role).context
+
+    def approve_with_result(
+        self, context_version_id: str, actor_role: str = "teacher"
+    ) -> ContextApprovalResult:
         try:
             context = self._context(context_version_id)
             if context.teacher_review_status is TeacherReviewStatus.APPROVED:
@@ -101,9 +113,10 @@ class TeacherReviewService:
             approved_at = self._now()
             context.teacher_review_status = TeacherReviewStatus.APPROVED
             context.approved_at = approved_at
-            for artifact in self._repository.find_non_stale_artifacts_from_older_approved_contexts(
+            artifacts = self._repository.find_non_stale_artifacts_from_older_approved_contexts(
                 context.course_id, context.version_number
-            ):
+            )
+            for artifact in artifacts:
                 artifact.generation_status = ArtifactStatus.STALE
                 artifact.stale_at = approved_at
                 artifact.stale_reason = "course_context_superseded"
@@ -114,7 +127,8 @@ class TeacherReviewService:
                     actor_role=actor_role,
                 )
             )
-            return self._commit(context)
+            self._commit(context)
+            return ContextApprovalResult(context, len(artifacts))
         except SQLAlchemyError:
             self._session.rollback()
             raise

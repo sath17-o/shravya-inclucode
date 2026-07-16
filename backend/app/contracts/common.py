@@ -1,4 +1,4 @@
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -14,6 +14,8 @@ class ErrorResponse(BaseModel):
     status: Literal["error"] = "error"
     code: str
     message: str
+    message_key: str
+    details: dict[str, Any] = Field(default_factory=dict)
     recoverable: bool
     next_actions: list[str] = Field(default_factory=list)
     job_id: str | None = None

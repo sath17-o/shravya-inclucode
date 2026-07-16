@@ -5,5 +5,7 @@ def test_unknown_route_returns_typed_error_contract(client) -> None:
     body = response.json()
     assert body["status"] == "error"
     assert body["code"] == "HTTP_404"
+    assert body["message_key"] == "HTTP_404"
+    assert body["details"] == {}
     assert body["recoverable"] is True
     assert "next_actions" in body

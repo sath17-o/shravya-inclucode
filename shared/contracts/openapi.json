@@ -1,0 +1,76 @@
+{
+  "components": {
+    "schemas": {
+      "HealthPayload": {
+        "properties": {
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "provider_mode": {
+            "title": "Provider Mode",
+            "type": "string"
+          },
+          "service": {
+            "const": "shravya-backend",
+            "default": "shravya-backend",
+            "title": "Service",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "provider_mode"
+        ],
+        "title": "HealthPayload",
+        "type": "object"
+      },
+      "SuccessResponse_HealthPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HealthPayload"
+          },
+          "status": {
+            "const": "success",
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[HealthPayload]",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Shravya API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_HealthPayload_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    }
+  }
+}

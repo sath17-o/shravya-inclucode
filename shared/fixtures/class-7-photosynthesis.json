@@ -1,0 +1,37 @@
+{
+  "fixture_status": "demo",
+  "source_status": "DEMO",
+  "teacher_review_status": "APPROVED",
+  "class_level": 7,
+  "subject": "Science",
+  "lesson": "Photosynthesis in Plants",
+  "primary_language": "മലയാളം-first bilingual",
+  "learning_objectives": [
+    "Explain what plants need to make food through photosynthesis."
+  ],
+  "glossary": [
+    {"canonical_term": "Photosynthesis", "malayalam_support_label": "പ്രകാശസംശ്ലേഷണം"},
+    {"canonical_term": "Chlorophyll", "malayalam_support_label": "ക്ലോറോഫിൽ", "asr_misrecognition": "chlorophil"},
+    {"canonical_term": "Chloroplast", "malayalam_support_label": "ക്ലോറോപ്ലാസ്റ്റ്"},
+    {"canonical_term": "Stomata", "malayalam_support_label": "സ്റ്റോമാറ്റ"},
+    {"canonical_term": "Carbon dioxide", "malayalam_support_label": "കാർബൺ ഡൈഓക്സൈഡ്"},
+    {"canonical_term": "Water", "malayalam_support_label": "വെള്ളം"},
+    {"canonical_term": "Sunlight", "malayalam_support_label": "സൂര്യപ്രകാശം"},
+    {"canonical_term": "Glucose", "malayalam_support_label": "ഗ്ലൂക്കോസ്"},
+    {"canonical_term": "Oxygen", "malayalam_support_label": "ഓക്സിജൻ"},
+    {"canonical_term": "Leaf", "malayalam_support_label": "ഇല"}
+  ],
+  "concepts": [
+    "What plants need for photosynthesis",
+    "How water and carbon dioxide reach the leaf",
+    "Role of sunlight and chlorophyll",
+    "Production of glucose",
+    "Release of oxygen"
+  ],
+  "question": {
+    "source_type": "teacher_question",
+    "source_label": "Class 7 Science teacher-approved practice",
+    "teacher_review_status": "APPROVED",
+    "text": "Name two things a plant needs for photosynthesis."
+  }
+}

@@ -20,10 +20,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.contracts.enums import (
     ArtifactStatus,
+    ConceptRelationshipType,
     ConceptState,
+    ContentLanguage,
+    ContextReviewEventType,
     JobStatus,
+    MaterialType,
     ProcessingJobType,
     QualityStatus,
+    QuestionSourceType,
     SourceStatus,
     TeacherReviewStatus,
     TermDecisionValue,
@@ -123,7 +128,16 @@ class CourseContextVersion(IdTimestampMixin, Base):
         default=TeacherReviewStatus.DRAFT,
         nullable=False,
     )
+    reviewer_note: Mapped[str | None] = mapped_column(Text)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    copied_from_context_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("course_context_versions.id", ondelete="SET NULL")
+    )
     course: Mapped[Course] = relationship(back_populates="context_versions")
+    copied_from_context_version: Mapped[CourseContextVersion | None] = relationship(
+        remote_side="CourseContextVersion.id", foreign_keys=[copied_from_context_version_id]
+    )
     chapters: Mapped[list[Chapter]] = relationship(
         back_populates="context_version", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -166,6 +180,7 @@ class Lesson(IdTimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     primary_language: Mapped[str] = mapped_column(String(20), default="ml", nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
     chapter: Mapped[Chapter] = relationship(back_populates="lessons")
     objectives: Mapped[list[LearningObjective]] = relationship(
         back_populates="lesson", cascade="all, delete-orphan", passive_deletes=True
@@ -183,6 +198,12 @@ class Lesson(IdTimestampMixin, Base):
         back_populates="lesson", cascade="all, delete-orphan", passive_deletes=True
     )
     questions: Mapped[list[QuestionItem]] = relationship(
+        back_populates="lesson", cascade="all, delete-orphan", passive_deletes=True
+    )
+    approved_materials: Mapped[list[ApprovedMaterial]] = relationship(
+        back_populates="lesson", cascade="all, delete-orphan", passive_deletes=True
+    )
+    concept_relationships: Mapped[list[ConceptRelationship]] = relationship(
         back_populates="lesson", cascade="all, delete-orphan", passive_deletes=True
     )
     processing_jobs: Mapped[list[ProcessingJob]] = relationship(
@@ -204,6 +225,7 @@ class LearningObjective(IdTimestampMixin, Base):
         ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
     )
     objective_text: Mapped[str] = mapped_column(Text, nullable=False)
+    malayalam_text: Mapped[str | None] = mapped_column(Text)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     lesson: Mapped[Lesson] = relationship(back_populates="objectives")
 
@@ -212,6 +234,8 @@ class GlossaryTerm(IdTimestampMixin, Base):
     __tablename__ = "glossary_terms"
     __table_args__ = (
         UniqueConstraint("lesson_id", "canonical_term", name="uq_glossary_lesson_term"),
+        UniqueConstraint("lesson_id", "sequence", name="uq_glossary_lesson_sequence"),
+        CheckConstraint("sequence >= 1", name="ck_glossary_terms_sequence"),
     )
 
     lesson_id: Mapped[str] = mapped_column(
@@ -219,7 +243,9 @@ class GlossaryTerm(IdTimestampMixin, Base):
     )
     canonical_term: Mapped[str] = mapped_column(String(200), nullable=False)
     malayalam_support_label: Mapped[str | None] = mapped_column(String(200))
-    definition: Mapped[str | None] = mapped_column(Text)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    malayalam_explanation: Mapped[str | None] = mapped_column(Text)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     lesson: Mapped[Lesson] = relationship(back_populates="glossary_terms")
     aliases: Mapped[list[TermAlias]] = relationship(
         back_populates="glossary_term", cascade="all, delete-orphan", passive_deletes=True
@@ -231,25 +257,30 @@ class GlossaryTerm(IdTimestampMixin, Base):
 
 class TermAlias(IdTimestampMixin, Base):
     __tablename__ = "term_aliases"
-    __table_args__ = (UniqueConstraint("glossary_term_id", "alias", name="uq_term_alias"),)
+    __table_args__ = (
+        UniqueConstraint("glossary_term_id", "normalized_alias", name="uq_term_alias"),
+    )
 
     glossary_term_id: Mapped[str] = mapped_column(
         ForeignKey("glossary_terms.id", ondelete="CASCADE"), nullable=False
     )
     alias: Mapped[str] = mapped_column(String(200), nullable=False)
+    normalized_alias: Mapped[str] = mapped_column(String(200), nullable=False)
     glossary_term: Mapped[GlossaryTerm] = relationship(back_populates="aliases")
 
 
 class ASRMisrecognition(IdTimestampMixin, Base):
     __tablename__ = "asr_misrecognitions"
     __table_args__ = (
-        UniqueConstraint("glossary_term_id", "detected_text", name="uq_asr_misrecognition"),
+        UniqueConstraint("glossary_term_id", "normalized_text", name="uq_asr_misrecognition"),
     )
 
     glossary_term_id: Mapped[str] = mapped_column(
         ForeignKey("glossary_terms.id", ondelete="CASCADE"), nullable=False
     )
     detected_text: Mapped[str] = mapped_column(String(200), nullable=False)
+    normalized_text: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_note: Mapped[str | None] = mapped_column(Text)
     glossary_term: Mapped[GlossaryTerm] = relationship(back_populates="misrecognitions")
 
 
@@ -446,6 +477,7 @@ class Concept(IdTimestampMixin, Base):
     __tablename__ = "concepts"
     __table_args__ = (
         UniqueConstraint("lesson_id", "sequence", name="uq_concept_lesson_sequence"),
+        UniqueConstraint("lesson_id", "concept_key", name="uq_concept_lesson_key"),
         CheckConstraint("sequence >= 1", name="ck_concepts_sequence"),
     )
 
@@ -453,6 +485,10 @@ class Concept(IdTimestampMixin, Base):
         ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(250), nullable=False)
+    concept_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    malayalam_title: Mapped[str | None] = mapped_column(String(250))
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    malayalam_definition: Mapped[str | None] = mapped_column(Text)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     lesson: Mapped[Lesson] = relationship(back_populates="concepts")
     evidence: Mapped[list[ConceptEvidence]] = relationship(
@@ -624,6 +660,8 @@ class QuestionItem(IdTimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("year IS NULL OR year > 0", name="ck_question_items_year"),
         CheckConstraint("marks IS NULL OR marks > 0", name="ck_question_items_marks"),
+        CheckConstraint("sequence >= 1", name="ck_question_items_sequence"),
+        UniqueConstraint("lesson_id", "sequence", name="uq_question_lesson_sequence"),
     )
 
     lesson_id: Mapped[str] = mapped_column(
@@ -632,9 +670,13 @@ class QuestionItem(IdTimestampMixin, Base):
     related_concept_id: Mapped[str | None] = mapped_column(
         ForeignKey("concepts.id", ondelete="SET NULL")
     )
-    source_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_type: Mapped[QuestionSourceType] = mapped_column(
+        sqlite_enum(QuestionSourceType, "question_source_type", 30), nullable=False
+    )
     source_label: Mapped[str] = mapped_column(String(200), nullable=False)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    malayalam_question_text: Mapped[str | None] = mapped_column(Text)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int | None] = mapped_column(Integer)
     marks: Mapped[int | None] = mapped_column(Integer)
     teacher_review_status: Mapped[TeacherReviewStatus] = mapped_column(
@@ -643,6 +685,83 @@ class QuestionItem(IdTimestampMixin, Base):
         nullable=False,
     )
     lesson: Mapped[Lesson] = relationship(back_populates="questions")
+
+
+class ApprovedMaterial(IdTimestampMixin, Base):
+    __tablename__ = "approved_materials"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "sequence", name="uq_material_lesson_sequence"),
+        CheckConstraint("sequence >= 1", name="ck_materials_sequence"),
+    )
+
+    lesson_id: Mapped[str] = mapped_column(
+        ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(250), nullable=False)
+    material_type: Mapped[MaterialType] = mapped_column(
+        sqlite_enum(MaterialType, "material_type", 20), nullable=False
+    )
+    source_label: Mapped[str] = mapped_column(String(250), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(500))
+    language: Mapped[ContentLanguage] = mapped_column(
+        sqlite_enum(ContentLanguage, "material_language", 20), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    teacher_review_status: Mapped[TeacherReviewStatus] = mapped_column(
+        sqlite_enum(TeacherReviewStatus, "material_teacher_review_status", 20),
+        default=TeacherReviewStatus.DRAFT,
+        nullable=False,
+    )
+    lesson: Mapped[Lesson] = relationship(back_populates="approved_materials")
+
+
+class ConceptRelationship(IdTimestampMixin, Base):
+    __tablename__ = "concept_relationships"
+    __table_args__ = (
+        CheckConstraint("source_concept_id != target_concept_id", name="ck_relationship_not_self"),
+        CheckConstraint("sequence >= 1", name="ck_relationship_sequence"),
+        UniqueConstraint(
+            "source_concept_id",
+            "target_concept_id",
+            "relationship_type",
+            name="uq_relationship_tuple",
+        ),
+        UniqueConstraint("lesson_id", "sequence", name="uq_relationship_lesson_sequence"),
+    )
+    lesson_id: Mapped[str] = mapped_column(
+        ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    source_concept_id: Mapped[str] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    target_concept_id: Mapped[str] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    relationship_type: Mapped[ConceptRelationshipType] = mapped_column(
+        sqlite_enum(ConceptRelationshipType, "concept_relationship_type", 20), nullable=False
+    )
+    teacher_note: Mapped[str | None] = mapped_column(Text)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    lesson: Mapped[Lesson] = relationship(back_populates="concept_relationships")
+    source_concept: Mapped[Concept] = relationship(foreign_keys=[source_concept_id])
+    target_concept: Mapped[Concept] = relationship(foreign_keys=[target_concept_id])
+
+
+class ContextReviewEvent(Base):
+    __tablename__ = "context_review_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid4_string)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    context_version_id: Mapped[str] = mapped_column(
+        ForeignKey("course_context_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[ContextReviewEventType] = mapped_column(
+        sqlite_enum(ContextReviewEventType, "context_review_event_type", 30), nullable=False
+    )
+    actor_role: Mapped[str] = mapped_column(String(30), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 # These names are part of the immutable initial migration and must remain in
@@ -666,3 +785,20 @@ Index("ix_artifact_references_artifact", ArtifactSourceReference.artifact_id)
 Index("ix_sessions_profile", LearningSession.learner_profile_id)
 Index("ix_states_profile", LearnerConceptState.learner_profile_id)
 Index("ix_questions_lesson", QuestionItem.lesson_id)
+Index("ix_context_copied_from", CourseContextVersion.copied_from_context_version_id)
+Index("ix_materials_lesson_sequence", ApprovedMaterial.lesson_id, ApprovedMaterial.sequence)
+Index("ix_glossary_lesson_sequence", GlossaryTerm.lesson_id, GlossaryTerm.sequence)
+Index("ix_aliases_glossary", TermAlias.glossary_term_id)
+Index("ix_misrecognitions_glossary", ASRMisrecognition.glossary_term_id)
+Index("ix_concept_relationships_lesson", ConceptRelationship.lesson_id)
+Index("ix_concept_relationships_source", ConceptRelationship.source_concept_id)
+Index("ix_concept_relationships_target", ConceptRelationship.target_concept_id)
+Index(
+    "ix_review_events_context_created",
+    ContextReviewEvent.context_version_id,
+    ContextReviewEvent.created_at,
+)
+Index("ix_artifacts_context", GeneratedArtifact.course_context_version_id)
+Index("ix_objectives_lesson_sequence", LearningObjective.lesson_id, LearningObjective.sequence)
+Index("ix_concepts_lesson_sequence", Concept.lesson_id, Concept.sequence)
+Index("ix_questions_lesson_sequence", QuestionItem.lesson_id, QuestionItem.sequence)

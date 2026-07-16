@@ -57,6 +57,45 @@ class TermDecisionValue(StrEnum):
     UNSURE = "UNSURE"
 
 
+class MaterialType(StrEnum):
+    TEACHER_NOTE = "teacher_note"
+    TEXTBOOK_EXCERPT = "textbook_excerpt"
+    WORKSHEET = "worksheet"
+    REFERENCE_TEXT = "reference_text"
+    OTHER = "other"
+
+
+class ContentLanguage(StrEnum):
+    EN = "en"
+    ML = "ml"
+    BILINGUAL = "bilingual"
+
+
+class ConceptRelationshipType(StrEnum):
+    PREREQUISITE_OF = "prerequisite_of"
+    INPUT_TO = "input_to"
+    ENABLES = "enables"
+    PRODUCES = "produces"
+    PRECEDES = "precedes"
+    RELATED_TO = "related_to"
+
+
+class ContextReviewEventType(StrEnum):
+    DRAFT_CREATED = "draft_created"
+    SUBMITTED_FOR_REVIEW = "submitted_for_review"
+    RETURNED_TO_DRAFT = "returned_to_draft"
+    APPROVED = "approved"
+    COPIED_TO_NEW_DRAFT = "copied_to_new_draft"
+
+
+class QuestionSourceType(StrEnum):
+    TEACHER_QUESTION = "teacher_question"
+    TEXTBOOK_EXERCISE = "textbook_exercise"
+    PAST_SCHOOL_EXAM = "past_school_exam"
+    BOARD_STYLE_QUESTION = "board_style_question"
+    AI_GENERATED_PRACTICE = "ai_generated_practice"
+
+
 class ConceptState(StrEnum):
     NOT_STARTED = "not_started"
     VIEWED = "viewed"

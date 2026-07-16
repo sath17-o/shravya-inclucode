@@ -271,7 +271,13 @@ def test_sqlite_rejects_invalid_enum_values_and_duplicate_provenance(database_se
     else:
         raise AssertionError("Expected the SQLite source-status CHECK constraint to reject UNKNOWN")
 
-    concept = Concept(lesson_id=lesson.id, title="Plant inputs", sequence=1)
+    concept = Concept(
+        lesson_id=lesson.id,
+        title="Plant inputs",
+        concept_key="plant-inputs",
+        definition="Plants need inputs to make food.",
+        sequence=1,
+    )
     artifact = GeneratedArtifact(
         lesson_id=lesson.id,
         course_context_version_id=context.id,
@@ -344,7 +350,13 @@ def test_term_suggestion_offsets_and_context_consistency(database_session) -> No
     else:
         raise AssertionError("Term suggestion offsets must be ordered and non-negative")
 
-    concept = Concept(lesson_id=lesson.id, title="Plant inputs", sequence=1)
+    concept = Concept(
+        lesson_id=lesson.id,
+        title="Plant inputs",
+        concept_key="plant-inputs",
+        definition="Plants need inputs to make food.",
+        sequence=1,
+    )
     database_session.add(concept)
     database_session.commit()
     assert concept.lesson.chapter.context_version_id == context.id

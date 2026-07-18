@@ -2,23 +2,26 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
 
 import { type InterfaceLanguage } from "../i18n/strings";
 
-export type LocalRole = "teacher" | "student";
-
 type AppContextValue = {
   language: InterfaceLanguage;
-  role: LocalRole;
+  curriculumRevision: number;
   setLanguage: (language: InterfaceLanguage) => void;
-  setRole: (role: LocalRole) => void;
+  refreshCurriculum: () => void;
 };
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<InterfaceLanguage>("bilingual");
-  const [role, setRole] = useState<LocalRole>("student");
+  const [curriculumRevision, setCurriculumRevision] = useState(0);
   const value = useMemo(
-    () => ({ language, role, setLanguage, setRole }),
-    [language, role],
+    () => ({
+      language,
+      curriculumRevision,
+      setLanguage,
+      refreshCurriculum: () => setCurriculumRevision((revision) => revision + 1),
+    }),
+    [curriculumRevision, language],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

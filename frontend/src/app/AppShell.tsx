@@ -1,31 +1,19 @@
 import { type ReactNode, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { useAppContext } from "./AppContext";
-import { Button, Link, RadioGroup } from "../components/primitives";
-import { LocalizedText, accessibleLocalizedText } from "../i18n/LocalizedText";
-import { localizedString, type InterfaceLanguage, type TranslationKey } from "../i18n/strings";
-
-const languageOptions: InterfaceLanguage[] = ["english", "malayalam", "bilingual"];
+import { Button, Link } from "../components/primitives";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { language, role, setLanguage, setRole } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const L = (key: TranslationKey) => <LocalizedText language={language} textKey={key} />;
-
+  const isTeacherRoute = location.pathname === "/teacher";
   useEffect(() => {
-    document.documentElement.lang = language === "english" ? "en" : "ml";
-    document.title = localizedString("appName", language);
-  }, [language]);
+    document.documentElement.lang = "en";
+    document.title = "Shravya";
+  }, []);
 
   const selectRole = (nextRole: "teacher" | "student") => {
-    setRole(nextRole);
-    if (nextRole === "teacher") {
-      navigate("/teacher-setup");
-    } else if (location.pathname === "/teacher-setup") {
-      navigate("/learning-home");
-    }
+    navigate(nextRole === "teacher" ? "/teacher" : "/student");
   };
 
   return (
@@ -35,37 +23,29 @@ export function AppShell({ children }: { children: ReactNode }) {
         href="#main-content"
         onClick={() => document.getElementById("main-content")?.focus()}
       >
-        {L("skipToContent")}
+        Skip to lesson content
       </a>
       <header className="site-header">
         <div className="brand-block">
-          <p className="eyebrow">{L("appDescription")}</p>
-          <p className="brand-name">{L("appName")}</p>
+          <p className="eyebrow"><span lang="ml">മലയാളം</span>-first classroom learning</p>
+          <p className="brand-name">Shravya</p>
+          <p className="tagline">Every class, made clear.</p>
         </div>
         <div className="header-controls">
-          <div aria-label={accessibleLocalizedText("roleLabel", language)} className="segmented-control" role="group">
-            <Button aria-pressed={role === "teacher"} onClick={() => selectRole("teacher")} type="button">
-              {L("teacherSetup")}
+          <div aria-label="Demo role switcher" className="segmented-control" role="group">
+            <Button aria-pressed={isTeacherRoute} onClick={() => selectRole("teacher")} type="button">
+              Teacher
             </Button>
-            <Button aria-pressed={role === "student"} onClick={() => selectRole("student")} type="button">
-              {L("studentLearning")}
+            <Button aria-pressed={!isTeacherRoute} onClick={() => selectRole("student")} type="button">
+              Student
             </Button>
           </div>
-          <RadioGroup
-            label={L("languageLabel")}
-            name="interface-language"
-            onChange={(value) => setLanguage(value as InterfaceLanguage)}
-            options={languageOptions.map((option) => ({ value: option, label: L(option) }))}
-            value={language}
-          />
+          <p className="role-note">Demo navigation only — no sign-in required.</p>
         </div>
       </header>
       <nav aria-label="Primary" className="primary-nav">
-        {role === "teacher" ? <Link to="/teacher-setup">{L("teacherSetup")}</Link> : null}
-        <Link to="/learning-home">{L("learningHome")}</Link>
-        <Link to="/lesson-overview">{L("lessonOverview")}</Link>
-        <Link to="/trust">{L("trustInformation")}</Link>
-        <Link to="/learning-preferences">{L("learningPreferences")}</Link>
+        <Link to="/teacher">Teacher review</Link>
+        <Link to="/student">Student lesson</Link>
       </nav>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>

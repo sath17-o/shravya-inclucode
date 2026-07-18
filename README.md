@@ -1,6 +1,6 @@
 # Shravya
 
-Shravya is a Malayalam-first inclusive learning platform for Classes 5–10. This repository currently contains only the approved **Phase 1 foundation**: typed architecture, database schema, accessible application shell, deterministic Photosynthesis fixtures, and automated smoke tests.
+Shravya is a Malayalam-first inclusive learning platform for Classes 5–10. This repository contains the approved foundation, teacher-guided curriculum context, deterministic Photosynthesis fixture, and visible teacher/student judge flow.
 
 It does not implement transcript processing, adaptive learning behaviour, generation, live providers, or a chatbot.
 
@@ -27,8 +27,9 @@ Copy-Item .env.example .env
 
 ```powershell
 # Database migration
-$env:SHRAVYA_DATABASE_URL = "sqlite:///./shravya.db"
-.\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
+Push-Location backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+Pop-Location
 
 # Backend
 .\scripts\start-backend.ps1
@@ -74,3 +75,18 @@ From `backend`, first migrate the configured database, then create or restore th
 ```
 
 The baseline contains Class 7 Science with Approved context v1 and hidden Draft context v2. Use `POST /api/v1/teacher/contexts/{v2_id}/submit-for-review`, then `POST /api/v1/teacher/contexts/{v2_id}/approve`; `GET /api/v1/student/courses/{course_id}/lesson-overview` then changes from v1 to v2. Reset restores v1 visibility and the ready v1 artifact.
+
+## Visible judge demo
+
+Reset the backend from `backend`, then start the existing backend command and the frontend development server:
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m scripts.seed_photosynthesis_demo --reset
+cd ..
+.\scripts\start-backend.ps1
+npm --prefix frontend run dev
+```
+
+Open `/student` to view the currently approved lesson and `/teacher` to review, submit, and approve the newer classroom context. The role switcher is local demo navigation, not sign-in.

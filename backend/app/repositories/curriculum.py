@@ -6,12 +6,17 @@ from sqlalchemy.orm import Session, selectinload
 from app.contracts.enums import ArtifactStatus, TeacherReviewStatus
 from app.models.foundation import (
     Chapter,
+    ConceptGlossaryTermLink,
     ContextReviewEvent,
     Course,
     CourseContextVersion,
     GeneratedArtifact,
     GlossaryTerm,
+    LectureAudio,
     Lesson,
+    TermSuggestion,
+    TranscriptRevision,
+    TranscriptSegment,
 )
 
 
@@ -39,12 +44,23 @@ class CurriculumRepository:
                 selectinload(Lesson.concepts),
                 selectinload(Lesson.concept_relationships),
                 selectinload(Lesson.questions),
+                selectinload(Lesson.audio_assets)
+                .selectinload(LectureAudio.transcript_revisions)
+                .selectinload(TranscriptRevision.segments)
+                .selectinload(TranscriptSegment.term_suggestions)
+                .selectinload(TermSuggestion.decisions),
+                selectinload(Lesson.audio_assets)
+                .selectinload(LectureAudio.transcript_revisions)
+                .selectinload(TranscriptRevision.quality_assessments),
             )
         )
         statement = (
             select(CourseContextVersion)
             .where(CourseContextVersion.id == context_version_id)
-            .options(lesson_options)
+            .options(
+                lesson_options,
+                selectinload(CourseContextVersion.concept_glossary_term_links),
+            )
         )
         return self._session.scalar(statement)
 
@@ -109,6 +125,9 @@ class CurriculumRepository:
 
     def add_context(self, context: CourseContextVersion) -> None:
         self._session.add(context)
+
+    def add_concept_glossary_term_link(self, link: ConceptGlossaryTermLink) -> None:
+        self._session.add(link)
 
     def flush(self) -> None:
         self._session.flush()

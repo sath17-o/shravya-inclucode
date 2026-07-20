@@ -10,6 +10,7 @@ from app.models.foundation import (
     ASRMisrecognition,
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     ConceptRelationship,
     ContextReviewEvent,
     CourseContextVersion,
@@ -58,8 +59,9 @@ class ContextVersioningService:
             raise
         try:
             lesson_ids = self._copy_chapters(source, copy)
-            concept_ids = self._copy_lesson_children(source, lesson_ids)
+            concept_ids, glossary_ids = self._copy_lesson_children(source, lesson_ids)
             self._copy_relationships_and_questions(source, lesson_ids, concept_ids)
+            self._copy_concept_glossary_term_links(source, copy, concept_ids, glossary_ids)
             event_note = (
                 f"copied_from:{source.id}" if note is None else f"copied_from:{source.id}; {note}"
             )
@@ -85,6 +87,37 @@ class ContextVersioningService:
             for lesson in chapter.lessons
             for concept in lesson.concepts
         }
+        glossary_ids = {
+            glossary.id
+            for chapter in source.chapters
+            for lesson in chapter.lessons
+            for glossary in lesson.glossary_terms
+        }
+        concept_lesson_ids = {
+            concept.id: lesson.id
+            for chapter in source.chapters
+            for lesson in chapter.lessons
+            for concept in lesson.concepts
+        }
+        glossary_lesson_ids = {
+            glossary.id: lesson.id
+            for chapter in source.chapters
+            for lesson in chapter.lessons
+            for glossary in lesson.glossary_terms
+        }
+        for link in source.concept_glossary_term_links:
+            if (
+                link.context_version_id != source.id
+                or link.concept_id not in concept_ids
+                or link.glossary_term_id not in glossary_ids
+                or concept_lesson_ids[link.concept_id] != glossary_lesson_ids[link.glossary_term_id]
+            ):
+                raise DomainError(
+                    "context_incomplete",
+                    "context.invalid_glossary_concept_reference",
+                    "validation",
+                    {"link_id": link.id},
+                )
         for chapter in source.chapters:
             for lesson in chapter.lessons:
                 for relationship in lesson.concept_relationships:
@@ -135,8 +168,9 @@ class ContextVersioningService:
 
     def _copy_lesson_children(
         self, source: CourseContextVersion, lesson_ids: dict[str, str]
-    ) -> dict[str, str]:
+    ) -> tuple[dict[str, str], dict[str, str]]:
         concept_ids: dict[str, str] = {}
+        glossary_ids: dict[str, str] = {}
         for chapter in source.chapters:
             for lesson in chapter.lessons:
                 new_lesson_id = lesson_ids[lesson.id]
@@ -174,6 +208,7 @@ class ContextVersioningService:
                     )
                     self._session.add(new_glossary)
                     self._session.flush()
+                    glossary_ids[glossary.id] = new_glossary.id
                     for alias in glossary.aliases:
                         self._session.add(
                             TermAlias(
@@ -204,7 +239,27 @@ class ContextVersioningService:
                     self._session.add(new_concept)
                     self._session.flush()
                     concept_ids[concept.id] = new_concept.id
-        return concept_ids
+        return concept_ids, glossary_ids
+
+    def _copy_concept_glossary_term_links(
+        self,
+        source: CourseContextVersion,
+        copy: CourseContextVersion,
+        concept_ids: dict[str, str],
+        glossary_ids: dict[str, str],
+    ) -> None:
+        for link in sorted(
+            source.concept_glossary_term_links,
+            key=lambda item: (item.concept_id, item.sequence, item.id),
+        ):
+            self._repository.add_concept_glossary_term_link(
+                ConceptGlossaryTermLink(
+                    context_version_id=copy.id,
+                    concept_id=concept_ids[link.concept_id],
+                    glossary_term_id=glossary_ids[link.glossary_term_id],
+                    sequence=link.sequence,
+                )
+            )
 
     def _copy_relationships_and_questions(
         self,

@@ -29,10 +29,13 @@ from app.contracts.enums import (
     ProcessingJobType,
     QualityStatus,
     QuestionSourceType,
+    RecordingDeletionStatus,
+    RecordingWorkflowStatus,
     SourceStatus,
     TeacherReviewStatus,
     TermDecisionValue,
     UncertaintyStatus,
+    UploadIntentStatus,
 )
 from app.db.base import Base
 
@@ -144,6 +147,9 @@ class CourseContextVersion(IdTimestampMixin, Base):
     artifacts: Mapped[list[GeneratedArtifact]] = relationship(
         back_populates="course_context_version", cascade="all, delete-orphan", passive_deletes=True
     )
+    concept_glossary_term_links: Mapped[list[ConceptGlossaryTermLink]] = relationship(
+        back_populates="context_version", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class Chapter(IdTimestampMixin, Base):
@@ -253,6 +259,9 @@ class GlossaryTerm(IdTimestampMixin, Base):
     misrecognitions: Mapped[list[ASRMisrecognition]] = relationship(
         back_populates="glossary_term", cascade="all, delete-orphan", passive_deletes=True
     )
+    concept_links: Mapped[list[ConceptGlossaryTermLink]] = relationship(
+        back_populates="glossary_term", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class TermAlias(IdTimestampMixin, Base):
@@ -286,19 +295,110 @@ class ASRMisrecognition(IdTimestampMixin, Base):
 
 class LectureAudio(IdTimestampMixin, Base):
     __tablename__ = "lecture_audio"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "sha256", name="uq_lecture_audio_lesson_sha256"),
+        CheckConstraint("byte_size > 0", name="ck_lecture_audio_byte_size"),
+        CheckConstraint("duration_ms > 0", name="ck_lecture_audio_duration_ms"),
+    )
 
     lesson_id: Mapped[str] = mapped_column(
         ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
     )
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(
+        String(255), default="recording.wav", nullable=False
+    )
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    sha256: Mapped[str] = mapped_column(
+        String(64), default=lambda: (uuid4().hex * 2)[:64], nullable=False
+    )
+    duration_ms: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     source_status: Mapped[SourceStatus] = mapped_column(
         sqlite_enum(SourceStatus, "lecture_audio_source_status", 20), nullable=False
+    )
+    workflow_status: Mapped[RecordingWorkflowStatus] = mapped_column(
+        sqlite_enum(RecordingWorkflowStatus, "recording_workflow_status", 40),
+        default=RecordingWorkflowStatus.UPLOADED,
+        nullable=False,
     )
     lesson: Mapped[Lesson] = relationship(back_populates="audio_assets")
     transcript_revisions: Mapped[list[TranscriptRevision]] = relationship(
         back_populates="lecture_audio", cascade="all, delete-orphan", passive_deletes=True
     )
+
+
+class RecordingDeletionTombstone(IdTimestampMixin, Base):
+    """Durable retry handle retained until root-contained media cleanup succeeds."""
+
+    __tablename__ = "recording_deletion_tombstones"
+    __table_args__ = (
+        UniqueConstraint("recording_id", name="uq_recording_deletion_tombstone_recording"),
+        CheckConstraint(
+            "media_relative_path NOT LIKE '/%' AND media_relative_path NOT LIKE '%..%' "
+            "AND media_relative_path NOT LIKE '%:%' AND "
+            "(quarantine_relative_path IS NULL OR "
+            "(quarantine_relative_path NOT LIKE '/%' AND quarantine_relative_path NOT LIKE '%..%' "
+            "AND quarantine_relative_path NOT LIKE '%:%'))",
+            name="ck_recording_tombstone_relative_path",
+        ),
+    )
+
+    recording_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    context_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    cleanup_type: Mapped[str] = mapped_column(
+        String(40), default="RECORDING_DELETION", nullable=False
+    )
+    media_relative_path: Mapped[str | None] = mapped_column(String(500))
+    quarantine_relative_path: Mapped[str | None] = mapped_column(String(500))
+    quarantine_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expected_sha256: Mapped[str | None] = mapped_column(String(64))
+    expected_byte_size: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[RecordingDeletionStatus] = mapped_column(
+        sqlite_enum(RecordingDeletionStatus, "recording_deletion_status", 30),
+        default=RecordingDeletionStatus.DELETE_PENDING,
+        nullable=False,
+    )
+    cleanup_owner_token: Mapped[str | None] = mapped_column(String(64))
+    cleanup_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cleanup_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    conflict_code: Mapped[str | None] = mapped_column(String(100))
+
+
+class MediaUploadIntent(IdTimestampMixin, Base):
+    """Crash-recovery state for an upload before its recording commit is durable."""
+
+    __tablename__ = "media_upload_intents"
+    __table_args__ = (
+        UniqueConstraint("final_relative_path", name="uq_media_upload_intent_final_path"),
+        CheckConstraint(
+            "temporary_relative_path NOT LIKE '/%' AND temporary_relative_path NOT LIKE '%..%' "
+            "AND temporary_relative_path NOT LIKE '%:%' AND final_relative_path NOT LIKE '/%' "
+            "AND final_relative_path NOT LIKE '%..%' AND final_relative_path NOT LIKE '%:%' "
+            "AND (quarantine_relative_path IS NULL OR "
+            "(quarantine_relative_path NOT LIKE '/%' AND quarantine_relative_path NOT LIKE '%..%' "
+            "AND quarantine_relative_path NOT LIKE '%:%'))",
+            name="ck_media_upload_intent_relative_paths",
+        ),
+    )
+
+    lesson_id: Mapped[str] = mapped_column(
+        ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    temporary_relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    final_relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    quarantine_relative_path: Mapped[str | None] = mapped_column(String(500))
+    quarantine_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    recording_id: Mapped[str | None] = mapped_column(String(36))
+    status: Mapped[UploadIntentStatus] = mapped_column(
+        sqlite_enum(UploadIntentStatus, "media_upload_intent_status", 30),
+        default=UploadIntentStatus.PREPARED,
+        nullable=False,
+    )
+    conflict_code: Mapped[str | None] = mapped_column(String(100))
 
 
 class TranscriptRevision(IdTimestampMixin, Base):
@@ -317,8 +417,26 @@ class TranscriptRevision(IdTimestampMixin, Base):
     source_status: Mapped[SourceStatus] = mapped_column(
         sqlite_enum(SourceStatus, "transcript_revision_source_status", 20), nullable=False
     )
+    copied_from_transcript_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transcript_revisions.id", ondelete="SET NULL")
+    )
+    provider_name: Mapped[str] = mapped_column(String(100), default="legacy", nullable=False)
+    provider_version: Mapped[str | None] = mapped_column(String(100))
+    provenance_label: Mapped[str] = mapped_column(
+        String(250), default="Legacy transcript record", nullable=False
+    )
+    teacher_review_status: Mapped[TeacherReviewStatus] = mapped_column(
+        sqlite_enum(TeacherReviewStatus, "transcript_teacher_review_status", 20),
+        default=TeacherReviewStatus.DRAFT,
+        nullable=False,
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by_role: Mapped[str | None] = mapped_column(String(20))
     language: Mapped[str] = mapped_column(String(20), default="ml", nullable=False)
     lecture_audio: Mapped[LectureAudio] = relationship(back_populates="transcript_revisions")
+    copied_from_transcript_revision: Mapped[TranscriptRevision | None] = relationship(
+        remote_side="TranscriptRevision.id", foreign_keys=[copied_from_transcript_revision_id]
+    )
     segments: Mapped[list[TranscriptSegment]] = relationship(
         back_populates="transcript_revision", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -452,7 +570,10 @@ class ProcessingJob(IdTimestampMixin, Base):
     """entity_id is intentionally generic; it identifies the job's typed domain entity."""
 
     __tablename__ = "processing_jobs"
-    __table_args__ = (CheckConstraint("retry_count >= 0", name="ck_processing_jobs_retry_count"),)
+    __table_args__ = (
+        CheckConstraint("retry_count >= 0", name="ck_processing_jobs_retry_count"),
+        UniqueConstraint("job_type", "entity_id", name="uq_processing_job_type_entity"),
+    )
 
     lesson_id: Mapped[str] = mapped_column(
         ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
@@ -469,8 +590,42 @@ class ProcessingJob(IdTimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(100))
     recoverable: Mapped[bool | None] = mapped_column(Boolean)
+    result_transcript_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transcript_revisions.id", ondelete="SET NULL")
+    )
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lesson: Mapped[Lesson] = relationship(back_populates="processing_jobs")
+    result_transcript_revision: Mapped[TranscriptRevision | None] = relationship(
+        foreign_keys=[result_transcript_revision_id]
+    )
+
+
+class LegacyProcessingJobArchive(IdTimestampMixin, Base):
+    """Immutable migration history; its result reference is historical text, not a live FK."""
+
+    __tablename__ = "legacy_processing_job_archive"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('QUEUED', 'PROCESSING', 'COMPLETED', 'RUNNING', 'SUCCEEDED', "
+            "'FAILED', 'CANCELLED')",
+            name="ck_legacy_processing_job_archive_status",
+        ),
+    )
+
+    lesson_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    original_entity_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    job_type: Mapped[ProcessingJobType] = mapped_column(
+        sqlite_enum(ProcessingJobType, "legacy_processing_job_type", 40), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    progress_message: Mapped[str] = mapped_column(String(500), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    recoverable: Mapped[bool | None] = mapped_column(Boolean)
+    result_transcript_revision_id: Mapped[str | None] = mapped_column(String(36))
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    archived_reason: Mapped[str] = mapped_column(String(100), nullable=False)
 
 
 class Concept(IdTimestampMixin, Base):
@@ -500,6 +655,52 @@ class Concept(IdTimestampMixin, Base):
     source_artifacts: Mapped[list[ArtifactSourceConcept]] = relationship(
         back_populates="concept", cascade="all, delete-orphan", passive_deletes=True
     )
+    glossary_links: Mapped[list[ConceptGlossaryTermLink]] = relationship(
+        back_populates="concept", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ConceptGlossaryTermLink(IdTimestampMixin, Base):
+    """An approved-context glossary term that directly supports a concept."""
+
+    __tablename__ = "concept_glossary_term_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "context_version_id",
+            "concept_id",
+            "glossary_term_id",
+            name="uq_concept_glossary_term_link_pair",
+        ),
+        UniqueConstraint(
+            "context_version_id",
+            "concept_id",
+            "sequence",
+            name="uq_concept_glossary_term_link_sequence",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_concept_glossary_term_link_sequence"),
+        Index(
+            "ix_concept_glossary_term_link_context_glossary",
+            "context_version_id",
+            "glossary_term_id",
+            "sequence",
+        ),
+    )
+
+    context_version_id: Mapped[str] = mapped_column(
+        ForeignKey("course_context_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    concept_id: Mapped[str] = mapped_column(
+        ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    glossary_term_id: Mapped[str] = mapped_column(
+        ForeignKey("glossary_terms.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    context_version: Mapped[CourseContextVersion] = relationship(
+        back_populates="concept_glossary_term_links"
+    )
+    concept: Mapped[Concept] = relationship(back_populates="glossary_links")
+    glossary_term: Mapped[GlossaryTerm] = relationship(back_populates="concept_links")
 
 
 class ConceptEvidence(IdTimestampMixin, Base):
@@ -772,12 +973,15 @@ Index("ix_lessons_chapter", Lesson.chapter_id)
 Index("ix_objectives_lesson", LearningObjective.lesson_id)
 Index("ix_glossary_lesson", GlossaryTerm.lesson_id)
 Index("ix_audio_lesson", LectureAudio.lesson_id)
+Index("ix_recording_tombstone_context", RecordingDeletionTombstone.context_version_id)
+Index("ix_media_upload_intent_status", MediaUploadIntent.status)
 Index("ix_revisions_audio", TranscriptRevision.lecture_audio_id)
 Index("ix_segments_revision", TranscriptSegment.transcript_revision_id)
 Index("ix_suggestions_segment", TermSuggestion.transcript_segment_id)
 Index("ix_assessments_revision", TranscriptQualityAssessment.transcript_revision_id)
 Index("ix_reasons_assessment", TranscriptQualityReason.assessment_id)
 Index("ix_jobs_lesson", ProcessingJob.lesson_id)
+Index("ix_legacy_processing_job_archive_entity", LegacyProcessingJobArchive.original_entity_id)
 Index("ix_concepts_lesson", Concept.lesson_id)
 Index("ix_artifacts_lesson", GeneratedArtifact.lesson_id)
 Index("ix_artifact_concepts_artifact", ArtifactSourceConcept.artifact_id)

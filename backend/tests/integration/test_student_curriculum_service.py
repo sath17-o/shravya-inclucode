@@ -3,24 +3,36 @@ from dataclasses import fields, is_dataclass
 import pytest
 
 from app.api.v1.routes.curriculum import student_chapters
-from app.contracts.enums import TeacherReviewStatus
+from app.contracts.enums import QualityStatus, SourceStatus, TeacherReviewStatus
 from app.contracts.teacher_review import DomainError
 from app.models.foundation import (
     ApprovedMaterial,
     ASRMisrecognition,
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     ConceptRelationship,
     Course,
     CourseContextVersion,
     GlossaryTerm,
     LearningObjective,
+    LectureAudio,
     Lesson,
     QuestionItem,
     TermAlias,
+    TranscriptQualityAssessment,
+    TranscriptRevision,
+    TranscriptSegment,
 )
 from app.repositories.curriculum import CurriculumRepository
 from app.services.student_curriculum import StudentCurriculumService
+from app.services.transcript_provenance import (
+    DETERMINISTIC_DEMO_PROVENANCE,
+    DETERMINISTIC_DEMO_PROVIDER,
+    PHASE_3B_PROVIDER_VERSION,
+    TEACHER_ENTERED_PROVENANCE,
+    TEACHER_ENTERED_PROVIDER,
+)
 from tests.integration.factories import (
     approved_material,
     complete_photosynthesis_context,
@@ -82,6 +94,12 @@ def test_student_service_projection_selects_only_approved_context_and_children(
                     sequence=2,
                     teacher_review_status=TeacherReviewStatus.DRAFT,
                 ),
+                ConceptGlossaryTermLink(
+                    context_version=approved.context,
+                    concept=approved.concepts[1],
+                    glossary_term=approved.glossary_terms[0],
+                    sequence=2,
+                ),
             ]
         )
         other = complete_photosynthesis_context(
@@ -106,6 +124,10 @@ def test_student_service_projection_selects_only_approved_context_and_children(
     assert [question.question_text for question in lesson.questions] == [
         "What do plants need for photosynthesis?"
     ]
+    assert lesson.glossary_terms[0].concept_ids == (
+        lesson.concepts[0].id,
+        lesson.concepts[1].id,
+    )
     assert not hasattr(lesson, "lesson")
     assert not hasattr(lesson, "teacher_review_status")
     assert_scalar_only(projection)
@@ -142,3 +164,144 @@ def test_student_service_selects_highest_approved_and_handles_not_ready_and_unkn
         assert not_ready.context is None and not_ready.chapters == ()
         with pytest.raises(DomainError, match="course_not_found"):
             service.get_curriculum_projection("missing")
+
+
+def _transcript_revision(
+    lesson: Lesson,
+    *,
+    revision_number: int,
+    status: TeacherReviewStatus,
+    quality: QualityStatus,
+    source_status: SourceStatus = SourceStatus.DEMO,
+    recording: LectureAudio | None = None,
+) -> TranscriptRevision:
+    audio = recording or LectureAudio(
+        lesson=lesson,
+        storage_path=f"/safe/{revision_number}.wav",
+        original_filename="recording.wav",
+        mime_type="audio/wav",
+        byte_size=10,
+        sha256=(str(revision_number) * 64)[:64],
+        duration_ms=1000,
+        source_status=source_status,
+    )
+    deterministic = source_status is SourceStatus.DEMO
+    revision = TranscriptRevision(
+        lecture_audio=audio,
+        revision_number=revision_number,
+        source_status=source_status,
+        provider_name=DETERMINISTIC_DEMO_PROVIDER if deterministic else TEACHER_ENTERED_PROVIDER,
+        provider_version=PHASE_3B_PROVIDER_VERSION,
+        provenance_label=(
+            DETERMINISTIC_DEMO_PROVENANCE if deterministic else TEACHER_ENTERED_PROVENANCE
+        ),
+        teacher_review_status=status,
+    )
+    revision.segments = [
+        TranscriptSegment(sequence=1, start_ms=0, end_ms=1000, text=f"Revision {revision_number}")
+    ]
+    revision.quality_assessments = [TranscriptQualityAssessment(quality_status=quality)]
+    return revision
+
+
+@pytest.mark.parametrize(
+    ("latest_status", "latest_quality"),
+    [
+        (TeacherReviewStatus.DRAFT, QualityStatus.VERIFIED),
+        (TeacherReviewStatus.APPROVED, QualityStatus.FAILED),
+        (TeacherReviewStatus.NEEDS_REVIEW, QualityStatus.VERIFIED),
+    ],
+)
+def test_student_projection_never_falls_back_from_latest_revision(
+    migrated_api, latest_status, latest_quality
+) -> None:
+    with migrated_api.session_factory() as session:
+        context = complete_photosynthesis_context(session, status=TeacherReviewStatus.APPROVED)
+        first = _transcript_revision(
+            context.lesson,
+            revision_number=1,
+            status=TeacherReviewStatus.APPROVED,
+            quality=QualityStatus.VERIFIED,
+        )
+        second = _transcript_revision(
+            context.lesson,
+            recording=first.lecture_audio,
+            revision_number=2,
+            status=latest_status,
+            quality=latest_quality,
+        )
+        session.add_all([first, second])
+        session.commit()
+        projection = StudentCurriculumService(
+            CurriculumRepository(session)
+        ).get_curriculum_projection(context.course.id)
+        assert projection.chapters[0].lessons[0].approved_transcript is None
+
+
+def test_student_projection_uses_latest_verified_revision_per_recording(migrated_api) -> None:
+    with migrated_api.session_factory() as session:
+        context = complete_photosynthesis_context(session, status=TeacherReviewStatus.APPROVED)
+        first = _transcript_revision(
+            context.lesson,
+            revision_number=1,
+            status=TeacherReviewStatus.APPROVED,
+            quality=QualityStatus.VERIFIED,
+        )
+        latest = _transcript_revision(
+            context.lesson,
+            recording=first.lecture_audio,
+            revision_number=2,
+            status=TeacherReviewStatus.APPROVED,
+            quality=QualityStatus.VERIFIED,
+        )
+        session.add_all([first, latest])
+        session.commit()
+        projection = StudentCurriculumService(
+            CurriculumRepository(session)
+        ).get_curriculum_projection(context.course.id)
+        transcript = projection.chapters[0].lessons[0].approved_transcript
+        assert transcript is not None and transcript.id == latest.id
+
+
+def test_multiple_recordings_never_select_an_older_revision_from_one_recording(
+    migrated_api,
+) -> None:
+    with migrated_api.session_factory() as session:
+        context = complete_photosynthesis_context(session, status=TeacherReviewStatus.APPROVED)
+        first = _transcript_revision(
+            context.lesson,
+            revision_number=1,
+            status=TeacherReviewStatus.APPROVED,
+            quality=QualityStatus.VERIFIED,
+        )
+        newer_unapproved = _transcript_revision(
+            context.lesson,
+            recording=first.lecture_audio,
+            revision_number=2,
+            status=TeacherReviewStatus.DRAFT,
+            quality=QualityStatus.VERIFIED,
+        )
+        second_audio = LectureAudio(
+            lesson=context.lesson,
+            storage_path="/safe/second.wav",
+            original_filename="second.wav",
+            mime_type="audio/wav",
+            byte_size=10,
+            sha256="b" * 64,
+            duration_ms=1000,
+            source_status=SourceStatus.DEMO,
+        )
+        second_recording = _transcript_revision(
+            context.lesson,
+            recording=second_audio,
+            revision_number=1,
+            status=TeacherReviewStatus.APPROVED,
+            quality=QualityStatus.VERIFIED,
+        )
+        session.add_all([first, newer_unapproved, second_recording])
+        session.commit()
+        projection = StudentCurriculumService(
+            CurriculumRepository(session)
+        ).get_curriculum_projection(context.course.id)
+        transcript = projection.chapters[0].lessons[0].approved_transcript
+        assert transcript is not None and transcript.id == second_recording.id

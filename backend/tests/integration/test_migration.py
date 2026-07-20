@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from app.db.base import Base
 from app.models.foundation import (
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     Course,
     CourseContextVersion,
     LearnerConceptState,
@@ -313,6 +316,7 @@ def test_migrated_schema_matches_metadata_and_persists_concept_state_values(tmp_
     with engine.connect() as connection:
         migration_context = MigrationContext.configure(connection)
         assert compare_metadata(migration_context, Base.metadata) == []
+    engine.dispose()
 
     with Session(engine) as session:
         course = Course(title="Science", subject="Science", class_level=7, grade_band="5-7")
@@ -484,3 +488,470 @@ def test_phase_2a_database_constraints_and_delete_actions(tmp_path) -> None:
             ).scalar_one()
             == 0
         )
+
+
+def _insert_phase_2_parent_graph(connection) -> None:
+    connection.execute(
+        text(
+            "INSERT INTO courses (id, created_at, updated_at, title, subject, class_level, grade_band) "
+            "VALUES ('course-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Science', 'Science', 7, '5-7')"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO course_context_versions "
+            "(id, created_at, updated_at, course_id, version_number, teacher_review_status) "
+            "VALUES ('context-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'course-1', 1, 'DRAFT')"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO chapters (id, created_at, updated_at, context_version_id, title, sequence) "
+            "VALUES ('chapter-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-1', 'Plants', 1)"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO lessons (id, created_at, updated_at, chapter_id, title, sequence, primary_language) "
+            "VALUES ('lesson-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'chapter-1', 'Photosynthesis', 1, 'ml')"
+        )
+    )
+
+
+def test_phase_3b_backfills_populated_legacy_audio_and_job_rows(tmp_path) -> None:
+    database_path = tmp_path / "phase-3b-populated-legacy.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "20260716_0002")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.begin() as connection:
+        _insert_phase_2_parent_graph(connection)
+        connection.execute(
+            text(
+                "INSERT INTO lecture_audio "
+                "(id, created_at, updated_at, lesson_id, storage_path, mime_type, source_status) "
+                "VALUES ('audio-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', 'legacy.wav', 'audio/wav', 'DEMO')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO transcript_revisions "
+                "(id, created_at, updated_at, lecture_audio_id, revision_number, source_status, language) "
+                "VALUES ('revision-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'audio-1', 1, 'DEMO', 'ml')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO processing_jobs "
+                "(id, created_at, updated_at, lesson_id, job_type, entity_id, status, progress_message, retry_count) "
+                "VALUES ('job-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', 'TRANSCRIPTION', 'audio-1', "
+                "'PROCESSING', 'legacy', 0)"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT original_filename, byte_size, length(sha256), duration_ms, workflow_status "
+                "FROM lecture_audio WHERE id = 'audio-1'"
+            )
+        ).one() == ("legacy-recording.wav", 1, 64, 1, "UPLOADED")
+        assert connection.execute(
+            text(
+                "SELECT provider_name, provenance_label, teacher_review_status "
+                "FROM transcript_revisions WHERE id = 'revision-1'"
+            )
+        ).one() == (
+            "legacy-migrated",
+            "Legacy transcript record — provenance unavailable",
+            "DRAFT",
+        )
+        assert (
+            connection.execute(
+                text("SELECT status FROM processing_jobs WHERE id = 'job-1'")
+            ).scalar_one()
+            == "RUNNING"
+        )
+
+
+@pytest.mark.parametrize(
+    ("head_status", "legacy_status"),
+    [("QUEUED", "QUEUED"), ("RUNNING", "PROCESSING"), ("SUCCEEDED", "COMPLETED")],
+)
+def test_phase_3b_job_status_downgrade_and_reupgrade_is_reversible(
+    tmp_path, head_status: str, legacy_status: str
+) -> None:
+    database_path = tmp_path / f"phase-3b-{head_status}.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "20260716_0002")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.begin() as connection:
+        _insert_phase_2_parent_graph(connection)
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO processing_jobs "
+                "(id, created_at, updated_at, lesson_id, job_type, entity_id, status, progress_message, retry_count) "
+                "VALUES ('job-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', 'TRANSCRIPTION', 'audio-1', "
+                ":status, 'phase-3b', 0)"
+            ),
+            {"status": head_status},
+        )
+    command.downgrade(config, "20260716_0002")
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM processing_jobs WHERE id = 'job-1'")
+            ).scalar_one()
+            == legacy_status
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM processing_jobs WHERE id = 'job-1'")
+            ).scalar_one()
+            == head_status
+        )
+        migration_context = MigrationContext.configure(connection)
+        assert compare_metadata(migration_context, Base.metadata) == []
+    engine.dispose()
+
+
+def test_phase_3b_archives_duplicate_legacy_jobs_without_fabricating_entity_ids(tmp_path) -> None:
+    database_path = tmp_path / "phase-3b-duplicate-jobs.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "20260716_0002")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.begin() as connection:
+        _insert_phase_2_parent_graph(connection)
+        for job_id, status, error_code, retry_count in (
+            ("job-a", "PROCESSING", None, 0),
+            ("job-b", "COMPLETED", "legacy-complete", 2),
+            ("job-c", "FAILED", "legacy-failure", 3),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO processing_jobs "
+                    "(id, created_at, updated_at, lesson_id, job_type, entity_id, status, "
+                    "progress_message, error_code, retry_count) VALUES "
+                    f"('{job_id}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+                    "'TRANSCRIPTION', 'audio-1', :status, 'legacy duplicate', :error_code, "
+                    ":retry_count)"
+                ),
+                {"status": status, "error_code": error_code, "retry_count": retry_count},
+            )
+
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        assert connection.execute(
+            text("SELECT entity_id, status FROM processing_jobs WHERE id = 'job-a'")
+        ).one() == ("audio-1", "RUNNING")
+        assert connection.execute(
+            text(
+                "SELECT id, original_entity_id, status, error_code, retry_count, "
+                "result_transcript_revision_id, archived_reason "
+                "FROM legacy_processing_job_archive ORDER BY id"
+            )
+        ).all() == [
+            ("job-b", "audio-1", "COMPLETED", "legacy-complete", 2, None, "duplicate_legacy_job"),
+            ("job-c", "audio-1", "FAILED", "legacy-failure", 3, None, "duplicate_legacy_job"),
+        ]
+        connection.execute(
+            text(
+                "UPDATE legacy_processing_job_archive SET result_transcript_revision_id = "
+                "'historical-result-only' WHERE id = 'job-b'"
+            )
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT result_transcript_revision_id FROM legacy_processing_job_archive WHERE id = 'job-b'"
+                )
+            ).scalar_one()
+            == "historical-result-only"
+        )
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM processing_jobs WHERE entity_id LIKE '%-legacy-%'")
+            ).scalar_one()
+            == 0
+        )
+
+    engine.dispose()
+    command.downgrade(config, "20260716_0002")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT entity_id, status FROM processing_jobs WHERE id = 'job-b'")
+        ).one() == ("audio-1", "COMPLETED")
+        assert connection.execute(
+            text("SELECT entity_id, status FROM processing_jobs WHERE id = 'job-c'")
+        ).one() == ("audio-1", "FAILED")
+        assert "legacy_processing_job_archive" not in inspect(connection).get_table_names()
+
+    engine.dispose()
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text(
+                    "SELECT original_entity_id FROM legacy_processing_job_archive WHERE id = 'job-b'"
+                )
+            ).scalar_one()
+            == "audio-1"
+        )
+        # The migration documents that archive-only historical result text has
+        # no Phase 2 storage location and is therefore NULL after re-upgrade.
+        assert (
+            connection.execute(
+                text(
+                    "SELECT result_transcript_revision_id FROM legacy_processing_job_archive "
+                    "WHERE id = 'job-b'"
+                )
+            ).scalar_one()
+            is None
+        )
+        migration_context = MigrationContext.configure(connection)
+        assert compare_metadata(migration_context, Base.metadata) == []
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("table_name", "statement"),
+    [
+        (
+            "recording_deletion_tombstones",
+            "INSERT INTO recording_deletion_tombstones "
+            "(id, created_at, updated_at, recording_id, context_version_id, cleanup_type, "
+            "media_relative_path, status) VALUES "
+            "('pending-delete', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'recording-1', "
+            "'context-1', 'RECORDING_DELETION', 'lesson-1/pending.wav', 'DELETE_PENDING')",
+        ),
+        (
+            "media_upload_intents",
+            "INSERT INTO media_upload_intents "
+            "(id, created_at, updated_at, lesson_id, temporary_relative_path, "
+            "final_relative_path, sha256, byte_size, status) VALUES "
+            "('pending-upload', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+            "'lesson-1/pending.uploading', 'lesson-1/pending.wav', printf('%064d', 1), 1, 'PREPARED')",
+        ),
+        (
+            "media_upload_intents",
+            "INSERT INTO media_upload_intents "
+            "(id, created_at, updated_at, lesson_id, temporary_relative_path, "
+            "final_relative_path, sha256, byte_size, status) VALUES "
+            "('placed-upload', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+            "'lesson-1/placed.uploading', 'lesson-1/placed.wav', printf('%064d', 2), 2, 'MEDIA_PLACED')",
+        ),
+        (
+            "media_upload_intents",
+            "INSERT INTO media_upload_intents "
+            "(id, created_at, updated_at, lesson_id, temporary_relative_path, "
+            "final_relative_path, sha256, byte_size, status) VALUES "
+            "('committed-upload', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+            "'lesson-1/committed.uploading', 'lesson-1/committed.wav', printf('%064d', 3), 3, 'RECORDING_COMMITTED')",
+        ),
+        (
+            "media_upload_intents",
+            "INSERT INTO media_upload_intents "
+            "(id, created_at, updated_at, lesson_id, temporary_relative_path, "
+            "final_relative_path, sha256, byte_size, status, conflict_code) VALUES "
+            "('conflict-upload', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+            "'lesson-1/conflict.uploading', 'lesson-1/conflict.wav', printf('%064d', 4), 4, "
+            "'RECOVERY_CONFLICT', 'media_identity_mismatch')",
+        ),
+        (
+            "recording_deletion_tombstones",
+            "INSERT INTO recording_deletion_tombstones "
+            "(id, created_at, updated_at, recording_id, context_version_id, cleanup_type, "
+            "media_relative_path, status, cleanup_owner_token) VALUES "
+            "('claimed-delete', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'recording-2', "
+            "'context-1', 'RECORDING_DELETION', 'lesson-1/claimed.wav', 'CLEANUP_CLAIMED', 'owner')",
+        ),
+        (
+            "recording_deletion_tombstones",
+            "INSERT INTO recording_deletion_tombstones "
+            "(id, created_at, updated_at, recording_id, context_version_id, cleanup_type, "
+            "media_relative_path, status, conflict_code) VALUES "
+            "('conflict-delete', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'recording-3', "
+            "'context-1', 'RECORDING_DELETION', 'lesson-1/conflict.wav', 'RECOVERY_CONFLICT', "
+            "'media_identity_mismatch')",
+        ),
+    ],
+)
+def test_phase_3b_downgrade_blocks_pending_cleanup_without_schema_mutation(
+    tmp_path, table_name: str, statement: str
+) -> None:
+    database_path = tmp_path / f"pending-{table_name}.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.begin() as connection:
+        _insert_phase_2_parent_graph(connection)
+        connection.execute(text(statement))
+    engine.dispose()
+
+    with pytest.raises(RuntimeError, match="cleanup is pending"):
+        command.downgrade(config, "20260716_0002")
+
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.connect() as connection:
+        assert table_name in inspect(connection).get_table_names()
+        assert connection.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar_one() == 1
+    engine.dispose()
+
+
+def test_phase_3b_downgrade_allows_completed_deletion_receipts(tmp_path) -> None:
+    database_path = tmp_path / "completed-receipt.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO recording_deletion_tombstones "
+                "(id, created_at, updated_at, recording_id, context_version_id, cleanup_type, "
+                "media_relative_path, status, completed_at) VALUES "
+                "('completed-delete', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'recording-1', "
+                "'context-1', 'RECORDING_DELETION', NULL, 'COMPLETED', CURRENT_TIMESTAMP)"
+            )
+        )
+    engine.dispose()
+
+    # A completed receipt carries no pending media path; it is intentionally
+    # removable with the Phase 3B cleanup table during a downgrade.
+    command.downgrade(config, "20260716_0002")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.connect() as connection:
+        assert "recording_deletion_tombstones" not in inspect(connection).get_table_names()
+    engine.dispose()
+
+
+def test_concept_glossary_term_link_schema_enforces_context_and_cascades(tmp_path) -> None:
+    database_path = tmp_path / "concept-glossary-links.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys = ON"))
+        _insert_phase_2_parent_graph(connection)
+        connection.execute(
+            text(
+                "INSERT INTO concepts "
+                "(id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                "VALUES ('concept-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+                "'plant-inputs', 'Plant inputs', 'Plants need inputs.', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO glossary_terms "
+                "(id, created_at, updated_at, lesson_id, canonical_term, definition, sequence) "
+                "VALUES ('glossary-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+                "'Water', 'Water reaches the leaf.', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO concept_glossary_term_links "
+                "(id, created_at, updated_at, context_version_id, concept_id, glossary_term_id, sequence) "
+                "VALUES ('link-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-1', "
+                "'concept-1', 'glossary-1', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO course_context_versions "
+                "(id, created_at, updated_at, course_id, version_number, teacher_review_status) "
+                "VALUES ('context-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'course-1', 2, 'DRAFT')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO chapters (id, created_at, updated_at, context_version_id, title, sequence) "
+                "VALUES ('chapter-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-2', 'Plants', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO lessons (id, created_at, updated_at, chapter_id, title, sequence, primary_language) "
+                "VALUES ('lesson-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'chapter-2', 'Photosynthesis', 1, 'ml')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO concepts "
+                "(id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                "VALUES ('concept-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-2', "
+                "'oxygen', 'Oxygen', 'Oxygen is released.', 1)"
+            )
+        )
+
+    with engine.connect() as connection:
+        connection.execute(text("PRAGMA foreign_keys = ON"))
+        for statement in (
+            "INSERT INTO concept_glossary_term_links "
+            "(id, created_at, updated_at, context_version_id, concept_id, glossary_term_id, sequence) "
+            "VALUES ('link-duplicate', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-1', "
+            "'concept-1', 'glossary-1', 2)",
+            "INSERT INTO concept_glossary_term_links "
+            "(id, created_at, updated_at, context_version_id, concept_id, glossary_term_id, sequence) "
+            "VALUES ('link-zero', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-1', "
+            "'concept-1', 'glossary-1', 0)",
+            "INSERT INTO concept_glossary_term_links "
+            "(id, created_at, updated_at, context_version_id, concept_id, glossary_term_id, sequence) "
+            "VALUES ('link-cross-context', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-1', "
+            "'concept-2', 'glossary-1', 1)",
+        ):
+            with pytest.raises(IntegrityError):
+                connection.execute(text(statement))
+            connection.rollback()
+
+        connection.execute(text("DELETE FROM lessons WHERE id = 'lesson-1'"))
+        connection.commit()
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM concept_glossary_term_links WHERE id = 'link-1'")
+            ).scalar_one()
+            == 0
+        )
+        connection.execute(
+            text(
+                "INSERT INTO glossary_terms "
+                "(id, created_at, updated_at, lesson_id, canonical_term, definition, sequence) "
+                "VALUES ('glossary-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-2', "
+                "'Oxygen', 'Oxygen is released.', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO concept_glossary_term_links "
+                "(id, created_at, updated_at, context_version_id, concept_id, glossary_term_id, sequence) "
+                "VALUES ('link-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'context-2', "
+                "'concept-2', 'glossary-2', 1)"
+            )
+        )
+        connection.commit()
+        connection.execute(text("DELETE FROM course_context_versions WHERE id = 'context-2'"))
+        connection.commit()
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM concept_glossary_term_links WHERE id = 'link-2'")
+            ).scalar_one()
+            == 0
+        )
+
+    inspector = inspect(engine)
+    assert ConceptGlossaryTermLink.__tablename__ in inspector.get_table_names()
+    assert "ix_concept_glossary_term_link_context_glossary" in {
+        index["name"] for index in inspector.get_indexes(ConceptGlossaryTermLink.__tablename__)
+    }
+    assert {"uq_concept_glossary_term_link_pair", "uq_concept_glossary_term_link_sequence"} <= {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(ConceptGlossaryTermLink.__tablename__)
+    }
+    engine.dispose()

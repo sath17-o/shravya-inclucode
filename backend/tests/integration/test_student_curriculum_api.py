@@ -147,6 +147,7 @@ def test_student_filters_unapproved_children_and_prevents_context_and_teacher_le
     assert lesson["glossary_terms"][1]["malayalam_support_label"] == "ക്ലോറോഫിൽ"
     assert lesson["glossary_terms"][0]["aliases"]
     assert lesson["glossary_terms"][1]["misrecognitions"]
+    assert lesson["glossary_terms"][0]["concept_ids"] == [lesson["concepts"][0]["id"]]
     assert_forbidden_keys_absent(
         data,
         {

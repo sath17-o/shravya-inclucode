@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../app/App";
 import { AppProvider } from "../app/AppContext";
+import type { AudioWorkflowSummary } from "../api/contracts";
 import { createCurriculumFetch } from "./curriculumFixtures";
 
 function renderApp(initialEntry: "/teacher" | "/student", fetchMock = createCurriculumFetch()) {
@@ -13,6 +14,29 @@ function renderApp(initialEntry: "/teacher" | "/student", fetchMock = createCurr
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+function timelineSummary(state: AudioWorkflowSummary["state"]): AudioWorkflowSummary {
+  const hasRecording = state !== "NO_RECORDING";
+  const hasRevision = ["NEEDS_REVIEW", "QUALITY_BLOCKED", "QUALITY_VERIFIED", "TRANSCRIPT_APPROVED"].includes(state);
+  return {
+    context_version_id: "context-v2",
+    state,
+    recording: hasRecording ? { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" } : null,
+    latest_job: state === "PROCESSING_FAILED" ? { id: "job-1", status: "FAILED", stage: "Transcription", recoverable: true, error_code: "DEMO_FAILURE", message: "Transcription needs teacher attention." } : state === "PROCESSING" ? { id: "job-1", status: "RUNNING", stage: "Transcribing", recoverable: false, error_code: null, message: null } : null,
+    latest_revision: hasRevision ? {
+      id: "revision-1", recording_id: "recording-1", revision_number: 1, copied_from_transcript_revision_id: null, source_status: "DEMO", provider_name: "demo", provider_version: "phase-3b", provenance_label: "Deterministic offline demo transcription", teacher_review_status: state === "TRANSCRIPT_APPROVED" ? "APPROVED" : "DRAFT", approved_at: state === "TRANSCRIPT_APPROVED" ? "2026-07-16T09:05:00Z" : null,
+      segments: [{ id: "segment-1", sequence: 1, start_ms: 0, end_ms: 7654, text: "Plants need water." }], suggestions: [], quality: null,
+    } : null,
+    deletion: state === "REMOVAL_PENDING" ? { status: "PENDING", recoverable: true, message: "Recording cleanup is in progress." } : null,
+    capabilities: { can_start_processing: state === "UPLOADED", can_retry_processing: state === "PROCESSING_FAILED", can_enter_manual_transcript: hasRecording, can_edit_transcript: hasRevision, can_assess_quality: hasRevision, can_approve_transcript: state === "QUALITY_VERIFIED", can_remove_recording: hasRecording },
+  };
+}
+
+async function openTeacherAudio(summary: AudioWorkflowSummary) {
+  const view = renderApp("/teacher", createCurriculumFetch({ audioWorkflow: (contextId) => contextId === "context-v2" ? summary : { ...summary, context_version_id: contextId, state: "NO_RECORDING", recording: null, latest_job: null, latest_revision: null } }));
+  await userEvent.setup().click(await screen.findByRole("button", { name: /Version 2/ }));
+  return view;
+}
 
 describe("Phase 3A curriculum experience", () => {
   it("derives the Student controls from the student route", async () => {
@@ -113,7 +137,178 @@ describe("Phase 3A curriculum experience", () => {
     expect(screen.queryByText(/Visual Story later|Question Explorer preview|Phase 3/)).not.toBeInTheDocument();
   });
 
+  it("shows only a teacher-approved transcript and links corrected Chlorophyll to the glossary", async () => {
+    renderApp("/student", createCurriculumFetch({ approvedTranscript: true }));
+    expect(await screen.findByRole("heading", { name: "Approved classroom transcript" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.",
+      ),
+    ).toBeInTheDocument();
+    const corrected = screen.getByRole("link", { name: /Chlorophyll/ });
+    expect(corrected).toHaveAttribute("href", "#glossary-chlorophyll");
+  });
 
+  it("reconstructs every durable recording milestone with text, markers, and ordered-list semantics", async () => {
+    const cases: Array<[AudioWorkflowSummary["state"], string[]]> = [
+      ["NO_RECORDING", ["Not started", "Not started", "Not started", "Not started", "Not started"]],
+      ["UPLOADED", ["Complete", "Complete", "Not started", "Not started", "Not started"]],
+      ["PROCESSING", ["Complete", "Complete", "Current", "Not started", "Not started"]],
+      ["PROCESSING_FAILED", ["Complete", "Complete", "Failed", "Not started", "Not started"]],
+      ["MANUAL_TRANSCRIPT_REQUIRED", ["Complete", "Complete", "Failed", "Not started", "Not started"]],
+      ["NEEDS_REVIEW", ["Complete", "Complete", "Complete", "Complete", "Current"]],
+      ["QUALITY_BLOCKED", ["Complete", "Complete", "Complete", "Complete", "Current"]],
+      ["QUALITY_VERIFIED", ["Complete", "Complete", "Complete", "Complete", "Current"]],
+      ["TRANSCRIPT_APPROVED", ["Complete", "Complete", "Complete", "Complete", "Complete"]],
+    ];
+    const milestoneNames = ["Selected", "Uploading", "Transcribing", "Transcript ready", "Needs review"];
+    for (const [state, expectedStatuses] of cases) {
+      const view = await openTeacherAudio(timelineSummary(state));
+      const region = screen.getByRole("region", { name: "Recording workflow" });
+      const list = within(region).getByRole("list");
+      expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+      for (const [index, expectedStatus] of expectedStatuses.entries()) {
+        const item = within(list).getByText(milestoneNames[index]).closest("li");
+        await waitFor(() => expect(item).toHaveTextContent(expectedStatus));
+        expect(within(item!).getByText(/[○→✓!]/)).toBeInTheDocument();
+        if (expectedStatus === "Current") expect(item).toHaveAttribute("aria-current", "step");
+      }
+      view.unmount();
+    }
+  });
+
+  it("shows Selected and Uploading only while their local action state is active", async () => {
+    const user = userEvent.setup();
+    const baseFetch = createCurriculumFetch();
+    let completeUpload: (() => void) | undefined;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/recordings") && init?.method === "POST") {
+        return new Promise<Response>((resolve) => {
+          completeUpload = () => resolve(new Response(JSON.stringify({ status: "success", data: { id: "recording-1", lesson_id: "lesson-2", original_filename: "demo.wav", mime_type: "audio/wav", byte_size: 12, sha256: "a".repeat(64), duration_ms: 9000, source_status: "DEMO", workflow_status: "UPLOADED" } }), { status: 200, headers: { "content-type": "application/json" } }));
+        });
+      }
+      return baseFetch(input, init);
+    });
+    renderApp("/teacher", fetchMock);
+    await user.click(await screen.findByRole("button", { name: /Version 2/ }));
+    await user.upload(screen.getByLabelText("Choose WAV classroom recording"), new File(["wav"], "demo.wav", { type: "audio/wav" }));
+    const timeline = screen.getByRole("region", { name: "Recording workflow" });
+    expect(within(timeline).getByText("Selected").closest("li")).toHaveAttribute("aria-current", "step");
+    await user.click(screen.getByRole("button", { name: "Upload WAV" }));
+    await waitFor(() => expect(within(timeline).getByText("Uploading").closest("li")).toHaveAttribute("aria-current", "step"));
+    completeUpload?.();
+    await waitFor(() => expect(within(timeline).getByText("Uploading").closest("li")).not.toHaveAttribute("aria-current", "step"));
+  });
+
+  it("does not expose ordering controls on the immutable approved transcript display", async () => {
+    const view = await openTeacherAudio(timelineSummary("TRANSCRIPT_APPROVED"));
+    expect((await screen.findAllByText("Transcript review complete.")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("status")).toHaveTextContent("Transcript review complete.");
+    expect(screen.queryByRole("button", { name: /Move segment/ })).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("edits the actual chlorophil segment when creating a manual transcript revision", async () => {
+    const user = userEvent.setup();
+    const baseFetch = createCurriculumFetch();
+    const revision = {
+      id: "revision-1", recording_id: "recording-1", revision_number: 1,
+      copied_from_transcript_revision_id: null as string | null, source_status: "DEMO", provider_name: "demo", provider_version: "phase-3b",
+      provenance_label: "Deterministic demo transcription", teacher_review_status: "DRAFT", approved_at: null,
+      segments: [
+        { id: "segment-1", sequence: 1, start_ms: 0, end_ms: 3000, text: "Plants need water." },
+        { id: "segment-2", sequence: 2, start_ms: 3000, end_ms: 6000, text: "Leaf chlorophil captures light." },
+      ],
+      suggestions: [{ id: "suggestion-1", transcript_segment_id: "segment-2", glossary_term_id: "term-2", detected_text: "chlorophil", canonical_term: "Chlorophyll", malayalam_support_label: "ക്ലോറോഫിൽ", latest_decision: null }], quality: null,
+    };
+    let workflowStage: "NONE" | "UPLOADED" | "READY" = "NONE";
+    let activeRevision = revision;
+    const workflowSummary = (contextVersionId: string) => ({
+      context_version_id: contextVersionId,
+      state: workflowStage === "NONE" ? "NO_RECORDING" : workflowStage === "UPLOADED" ? "UPLOADED" : "NEEDS_REVIEW",
+      recording: workflowStage === "NONE" ? null : { id: "recording-1", original_filename: "demo.wav", mime_type: "audio/wav", duration_ms: 9000, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
+      latest_job: null,
+      latest_revision: workflowStage === "READY" ? activeRevision : null,
+      deletion: null,
+      capabilities: { can_start_processing: workflowStage === "UPLOADED", can_retry_processing: false, can_enter_manual_transcript: workflowStage !== "NONE", can_edit_transcript: workflowStage === "READY", can_assess_quality: workflowStage === "READY", can_approve_transcript: false, can_remove_recording: workflowStage !== "NONE" },
+    });
+    const audioFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const json = (data: unknown) => new Response(JSON.stringify({ status: "success", data }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/recordings") && init?.method === "POST") { workflowStage = "UPLOADED"; return json({ id: "recording-1", lesson_id: "lesson-2", original_filename: "demo.wav", mime_type: "audio/wav", byte_size: 12, sha256: "a".repeat(64), duration_ms: 9000, workflow_status: "UPLOADED" }); }
+      if (url.endsWith("/transcriptions")) return json({ id: "job-1", status: "QUEUED", stage: "Queued", recoverable: null, recording_id: "recording-1", resulting_transcript_revision_id: null, error_code: null });
+      if (url.endsWith("/processing-jobs/job-1/run")) { workflowStage = "READY"; return json({ id: "job-1", status: "SUCCEEDED", stage: "Ready", recoverable: null, recording_id: "recording-1", resulting_transcript_revision_id: "revision-1", error_code: null }); }
+      if (url.endsWith("/transcript-revisions/revision-1")) return json(revision);
+      if (url.endsWith("/transcript-revisions/revision-1/manual-revision")) {
+        const requestBody = JSON.parse(String(init?.body));
+        activeRevision = { ...revision, id: "revision-2", revision_number: 2, copied_from_transcript_revision_id: "revision-1", segments: requestBody.segments.map((segment: { sequence: number; start_ms: number; end_ms: number; text: string }, index: number) => ({ ...segment, id: `new-${index}` })) };
+        return json(activeRevision);
+      }
+      const audioContextId = url.match(/\/curriculum\/context-versions\/([^/]+)\/audio-workflow/)?.[1];
+      if (audioContextId) return json(workflowSummary(audioContextId));
+      return baseFetch(input, init);
+    });
+    renderApp("/teacher", audioFetch);
+    await user.click(await screen.findByRole("button", { name: /Version 2/ }));
+    const fileInput = await screen.findByLabelText("Choose WAV classroom recording");
+    await user.upload(fileInput, new File(["wav"], "demo.wav", { type: "audio/wav" }));
+    await user.click(screen.getByRole("button", { name: "Upload WAV" }));
+    await user.click(await screen.findByRole("button", { name: "Start transcription" }));
+    await user.click(await screen.findByRole("button", { name: "Manual transcript correction" }));
+    expect(screen.getByRole("button", { name: "Move segment 1 up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move segment 2 down" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Move segment 2 up" }));
+    expect(screen.getByText("Segment moved to position 1 of 2.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move segment 1 down" })).toHaveFocus();
+    expect(screen.getByLabelText("Segment 1 transcript text")).toHaveValue("Leaf chlorophil captures light.");
+    expect(screen.getByLabelText("Segment 1 start milliseconds")).toHaveValue(3000);
+    expect(screen.getByLabelText("Segment 1 end milliseconds")).toHaveValue(6000);
+    await user.click(screen.getByRole("button", { name: "Save new transcript revision" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Segment timestamps must follow the displayed order.");
+    expect(audioFetch.mock.calls.filter(([input]) => String(input).endsWith("/manual-revision"))).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Move segment 1 down" }));
+    expect(screen.getByLabelText("Segment 1 transcript text")).toHaveValue("Plants need water.");
+    const segmentTwo = screen.getByLabelText("Segment 2 transcript text");
+    await user.clear(segmentTwo);
+    await user.type(segmentTwo, "Leaf Chlorophyll captures light.");
+    await user.click(screen.getByRole("button", { name: "Save new transcript revision" }));
+    expect(await screen.findByText(/Revision 2/)).toBeInTheDocument();
+    expect(screen.getByText("Leaf Chlorophyll captures light.")).toBeInTheDocument();
+    expect(audioFetch.mock.calls.some(([, init]) => String(init?.body).includes("Chlorophyll"))).toBe(true);
+  });
+
+  it("restores a durable transcript review after reopening the teacher context", async () => {
+    const resumeSummary = {
+      context_version_id: "context-v2",
+      state: "QUALITY_BLOCKED" as const,
+      recording: { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
+      latest_job: { id: "job-1", status: "SUCCEEDED" as const, stage: "Transcript ready for teacher review", recoverable: false, error_code: null, message: null },
+      latest_revision: {
+        id: "revision-1", recording_id: "recording-1", revision_number: 1, copied_from_transcript_revision_id: null,
+        source_status: "DEMO", provider_name: "shravya-deterministic-demo", provider_version: "phase-3b",
+        provenance_label: "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.", teacher_review_status: "DRAFT" as const, approved_at: null,
+        segments: [{ id: "segment-2", sequence: 2, start_ms: 7654, end_ms: 12988, text: "ഇലയിലെ chlorophil സൂര്യപ്രകാശം പിടിച്ചെടുക്കുന്നു." }],
+        suggestions: [{ id: "suggestion-1", transcript_segment_id: "segment-2", glossary_term_id: "term-2", detected_text: "chlorophil", canonical_term: "Chlorophyll", malayalam_support_label: "ക്ലോറോഫിൽ", latest_decision: "CONFIRMED" as const }],
+        quality: { quality_status: "FAILED" as const, measured_coverage: 1, reasons: [{ reason_code: "unresolved_terms", severity: "BLOCKING", message_key: "quality.unresolved_terms", measured_value: 1, threshold: 0, recovery_action: "confirm_or_edit_term" }] },
+      },
+      deletion: null,
+      capabilities: { can_start_processing: false, can_retry_processing: false, can_enter_manual_transcript: true, can_edit_transcript: true, can_assess_quality: true, can_approve_transcript: false, can_remove_recording: true },
+    };
+    const fetchMock = createCurriculumFetch({ audioWorkflow: (contextId) => contextId === "context-v2" ? resumeSummary : { ...resumeSummary, context_version_id: contextId, state: "NO_RECORDING", recording: null, latest_job: null, latest_revision: null, capabilities: { ...resumeSummary.capabilities, can_enter_manual_transcript: false, can_edit_transcript: false, can_assess_quality: false, can_remove_recording: false } } });
+    const first = renderApp("/teacher", fetchMock);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Version 2/ }));
+    expect(await screen.findByText("photosynthesis-demo.wav")).toBeInTheDocument();
+    expect(screen.getByText(/Deterministic offline demo transcript mapped/)).toBeInTheDocument();
+    expect(screen.getAllByText(/chlorophil/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByLabelText("Choose WAV classroom recording")).not.toBeInTheDocument();
+    first.unmount();
+    renderApp("/teacher", fetchMock);
+    await user.click(await screen.findByRole("button", { name: /Version 2/ }));
+    expect(await screen.findByText("photosynthesis-demo.wav")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveAttribute("aria-pressed", "true");
+  });
 
   it("keeps Question Explorer as a semantic list with separated source labels", async () => {
     renderApp("/student");

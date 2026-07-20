@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.contracts.enums import TeacherReviewStatus
+from app.contracts.enums import QualityStatus, TeacherReviewStatus
 from app.contracts.teacher_review import DomainError
 from app.models.foundation import Chapter, Lesson
 from app.repositories.curriculum import CurriculumRepository
+from app.services.transcript_provenance import recognised_provenance
+from app.services.transcript_quality import unresolved_suggestion_count
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +68,7 @@ class StudentGlossaryTermProjection:
     definition: str
     malayalam_explanation: str | None
     sequence: int
+    concept_ids: tuple[str, ...]
     aliases: tuple[StudentTermAliasProjection, ...]
     misrecognitions: tuple[StudentASRVariantProjection, ...]
 
@@ -104,6 +107,27 @@ class StudentQuestionProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class StudentTranscriptSegmentProjection:
+    id: str
+    sequence: int
+    start_ms: int
+    end_ms: int
+    text: str
+    corrected_glossary_term_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentTranscriptProjection:
+    id: str
+    recording_id: str
+    provenance_label: str
+    source_status: str
+    teacher_review_status: str
+    trusted_context_version: int
+    segments: tuple[StudentTranscriptSegmentProjection, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class StudentLessonProjection:
     id: str
     title: str
@@ -116,6 +140,7 @@ class StudentLessonProjection:
     concepts: tuple[StudentConceptProjection, ...]
     concept_relationships: tuple[StudentRelationshipProjection, ...]
     questions: tuple[StudentQuestionProjection, ...]
+    approved_transcript: StudentTranscriptProjection | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,25 +194,39 @@ class StudentCurriculumService:
                 approved_at=context.approved_at,
             ),
             chapters=tuple(
-                self._chapter_projection(chapter)
+                self._chapter_projection(chapter, context)
                 for chapter in sorted(context.chapters, key=lambda item: (item.sequence, item.id))
             ),
         )
 
     @staticmethod
-    def _chapter_projection(chapter: Chapter) -> StudentChapterProjection:
+    def _chapter_projection(chapter: Chapter, context) -> StudentChapterProjection:
         return StudentChapterProjection(
             id=chapter.id,
             title=chapter.title,
             sequence=chapter.sequence,
             lessons=tuple(
-                StudentCurriculumService._lesson_projection(lesson)
+                StudentCurriculumService._lesson_projection(lesson, context)
                 for lesson in sorted(chapter.lessons, key=lambda item: (item.sequence, item.id))
             ),
         )
 
     @staticmethod
-    def _lesson_projection(lesson: Lesson) -> StudentLessonProjection:
+    def _lesson_projection(lesson: Lesson, context) -> StudentLessonProjection:
+        linked_concept_ids: dict[str, list[str]] = {}
+        lesson_concept_ids = {concept.id for concept in lesson.concepts}
+        concept_sequences = {concept.id: concept.sequence for concept in lesson.concepts}
+        for link in sorted(
+            context.concept_glossary_term_links,
+            key=lambda item: (
+                item.glossary_term_id,
+                concept_sequences.get(item.concept_id, 0),
+                item.sequence,
+                item.id,
+            ),
+        ):
+            if link.concept_id in lesson_concept_ids:
+                linked_concept_ids.setdefault(link.glossary_term_id, []).append(link.concept_id)
         return StudentLessonProjection(
             id=lesson.id,
             title=lesson.title,
@@ -230,6 +269,7 @@ class StudentCurriculumService:
                     definition=item.definition,
                     malayalam_explanation=item.malayalam_explanation,
                     sequence=item.sequence,
+                    concept_ids=tuple(linked_concept_ids.get(item.id, ())),
                     aliases=tuple(
                         StudentTermAliasProjection(
                             id=alias.id,
@@ -298,5 +338,74 @@ class StudentCurriculumService:
                     ),
                     key=lambda item: (item.sequence, item.id),
                 )
+            ),
+            approved_transcript=StudentCurriculumService._approved_transcript(
+                lesson, context.version_number
+            ),
+        )
+
+    @staticmethod
+    def _approved_transcript(
+        lesson: Lesson, context_version: int
+    ) -> StudentTranscriptProjection | None:
+        approved = []
+        for recording in lesson.audio_assets:
+            revision = max(
+                recording.transcript_revisions,
+                key=lambda item: (item.revision_number, item.id),
+                default=None,
+            )
+            if revision is None:
+                continue
+            quality = max(
+                revision.quality_assessments,
+                key=lambda item: (item.created_at, item.id),
+                default=None,
+            )
+            if (
+                revision.teacher_review_status is TeacherReviewStatus.APPROVED
+                and quality is not None
+                and quality.quality_status is QualityStatus.VERIFIED
+                and recognised_provenance(revision).supported
+                and unresolved_suggestion_count(revision) == 0
+            ):
+                approved.append(revision)
+        if not approved:
+            return None
+        revision = max(approved, key=lambda item: (item.created_at, item.revision_number, item.id))
+        corrected_by_segment: dict[str, str] = {}
+        display_text_by_segment: dict[str, str] = {
+            segment.id: segment.text for segment in revision.segments
+        }
+        glossary_by_id = {term.id: term for term in lesson.glossary_terms}
+        for segment in revision.segments:
+            for suggestion in segment.term_suggestions:
+                decision = max(
+                    suggestion.decisions, key=lambda item: (item.created_at, item.id), default=None
+                )
+                if decision is not None and decision.decision.value == "CONFIRMED":
+                    glossary = glossary_by_id.get(suggestion.glossary_term_id or "")
+                    if glossary is not None:
+                        corrected_by_segment[segment.id] = glossary.id
+                        display_text_by_segment[segment.id] = display_text_by_segment[
+                            segment.id
+                        ].replace(suggestion.detected_text, glossary.canonical_term)
+        return StudentTranscriptProjection(
+            id=revision.id,
+            recording_id=revision.lecture_audio_id,
+            provenance_label=revision.provenance_label,
+            source_status=revision.source_status.value,
+            teacher_review_status=revision.teacher_review_status.value,
+            trusted_context_version=context_version,
+            segments=tuple(
+                StudentTranscriptSegmentProjection(
+                    id=segment.id,
+                    sequence=segment.sequence,
+                    start_ms=segment.start_ms,
+                    end_ms=segment.end_ms,
+                    text=display_text_by_segment[segment.id],
+                    corrected_glossary_term_id=corrected_by_segment.get(segment.id),
+                )
+                for segment in sorted(revision.segments, key=lambda item: (item.sequence, item.id))
             ),
         )

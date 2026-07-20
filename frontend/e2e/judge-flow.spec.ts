@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -6,6 +8,7 @@ const v1 = "context-v1";
 const v2 = "context-v2";
 const course = { id: courseId, title: "Class 7 Science", subject: "Science", class_level: 7, grade_band: "5-7" };
 const complete = { context_version_id: v2, is_complete: true, issues: [], completed_sections: ["approved_materials", "glossary", "concepts", "questions", "required_text"], incomplete_sections: [] };
+const spokenFixturePath = fileURLToPath(new URL("../../backend/app/demo/assets/photosynthesis-demo.wav", import.meta.url));
 
 function json(data: unknown, status = 200) {
   return { status, contentType: "application/json", body: JSON.stringify(data) };
@@ -19,7 +22,7 @@ function lesson(version: number) {
   const improved = version === 2;
   const glossary = [
     ["Photosynthesis", "പ്രകാശസംശ്ലേഷണം"], ["Chlorophyll", "ക്ലോറോഫിൽ"], ["Chloroplast", "ഹരിതകണം"], ["Stomata", "ഇലരന്ധ്രങ്ങൾ"], ["Carbon dioxide", "കാർബൺ ഡൈ ഓക്സൈഡ്"], ["Water", "ജലം"], ["Sunlight", "സൂര്യപ്രകാശം"], ["Glucose", "ഗ്ലൂക്കോസ്"], ["Oxygen", "ഓക്സിജൻ"], ["Leaf", "ഇല"],
-  ].map(([canonical_term, malayalam_support_label], index) => ({ id: `term-${index}`, canonical_term, malayalam_support_label, definition: `${canonical_term} lesson definition.`, malayalam_explanation: null, sequence: index + 1, aliases: [], misrecognitions: canonical_term === "Chlorophyll" ? [{ id: "asr", detected_text: "chlorophil", normalized_text: "chlorophil" }] : [] }));
+  ].map(([canonical_term, malayalam_support_label], index) => ({ id: `term-${index}`, canonical_term, malayalam_support_label, definition: `${canonical_term} lesson definition.`, malayalam_explanation: null, sequence: index + 1, concept_ids: [["c0"], ["c2"], ["c2"], ["c1"], ["c0", "c1"], ["c0", "c1"], ["c0", "c2"], ["c3"], ["c4"], ["c1"]][index], aliases: [], misrecognitions: canonical_term === "Chlorophyll" ? [{ id: "asr", detected_text: "chlorophil", normalized_text: "chlorophil" }] : [] }));
   return {
     id: `lesson-${version}`, title: "Photosynthesis in Plants", sequence: 1, primary_language: "ml", description: "Plants use sunlight, water and carbon dioxide to make glucose and release oxygen.",
     objectives: [{ id: "o1", objective_text: "Identify the inputs required for photosynthesis.", malayalam_text: "പ്രകാശസംശ്ലേഷണത്തിന് ആവശ്യമായ ഘടകങ്ങളെ തിരിച്ചറിയുക.", sequence: 1 }],
@@ -34,11 +37,47 @@ function lesson(version: number) {
 async function mockJudgeApi(page: Page) {
   let v2Status: "DRAFT" | "NEEDS_REVIEW" | "APPROVED" = "DRAFT";
   let studentVersion = 1;
+  let audioStage: "NONE" | "UPLOADED" | "PROCESSING" | "READY" = "NONE";
+  let termDecision: "CONFIRMED" | "REJECTED" | "UNSURE" | null = null;
   const events = { [v1]: [], [v2]: [{ id: "copy", event_type: "copied_to_new_draft", actor_role: "teacher", note: null, created_at: "2026-07-16T09:05:00Z" }] } as Record<string, object[]>;
+  const audioSummary = (contextVersionId: string) => ({
+    context_version_id: contextVersionId,
+    state: audioStage === "NONE" ? "NO_RECORDING" : audioStage === "UPLOADED" ? "UPLOADED" : audioStage === "PROCESSING" ? "PROCESSING" : "NEEDS_REVIEW",
+    recording: audioStage === "NONE" ? null : { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
+    latest_job: audioStage === "PROCESSING" ? { id: "job-1", status: "RUNNING", stage: "Transcribing", recoverable: false, error_code: null, message: null } : null,
+    latest_revision: audioStage === "READY" ? {
+      id: "revision-1", recording_id: "recording-1", revision_number: 1, copied_from_transcript_revision_id: null, source_status: "DEMO", provider_name: "shravya-deterministic-demo", provider_version: "phase-3b", provenance_label: "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.", teacher_review_status: "DRAFT", approved_at: null,
+      segments: [{ id: "segment-2", sequence: 2, start_ms: 7654, end_ms: 12988, text: "ഇലയിലെ chlorophil സൂര്യപ്രകാശം പിടിച്ചെടുക്കുന്നു." }],
+      suggestions: [{ id: "suggestion-1", transcript_segment_id: "segment-2", glossary_term_id: "term-1", detected_text: "chlorophil", canonical_term: "Chlorophyll", malayalam_support_label: "ക്ലോറോഫിൽ", latest_decision: termDecision }],
+      quality: null,
+    } : null,
+    deletion: null,
+    capabilities: { can_start_processing: audioStage === "UPLOADED", can_retry_processing: false, can_enter_manual_transcript: audioStage !== "NONE", can_edit_transcript: audioStage === "READY", can_assess_quality: audioStage === "READY", can_approve_transcript: false, can_remove_recording: audioStage !== "NONE" },
+  });
   await page.route("**/api/v1/**", async (route) => {
     const url = route.request().url();
     const method = route.request().method();
     if (url.endsWith(`/teacher/courses/${courseId}/contexts`)) return route.fulfill(json({ status: "success", data: [context(1, "APPROVED"), context(2, v2Status)] }));
+    const audioContextId = url.match(/\/curriculum\/context-versions\/([^/]+)\/audio-workflow/)?.[1];
+    if (audioContextId) return route.fulfill(json({ status: "success", data: audioSummary(audioContextId) }));
+    if (url.endsWith("/teacher/lessons/lesson-2/recordings") && method === "POST") {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      audioStage = "UPLOADED";
+      return route.fulfill(json({ status: "success", data: { id: "recording-1", lesson_id: "lesson-2", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", byte_size: 620878, sha256: "f431fd3931ed5c8e0f53a0ae4bce1a3d9ae0cf656efc0234cd8f3e742cb9ead7", duration_ms: 19400, source_status: "DEMO", workflow_status: "UPLOADED" } }));
+    }
+    if (url.endsWith("/teacher/recordings/recording-1/transcriptions") && method === "POST") {
+      audioStage = "PROCESSING";
+      return route.fulfill(json({ status: "success", data: { id: "job-1", status: "QUEUED", stage: "Queued", recoverable: null, recording_id: "recording-1", resulting_transcript_revision_id: null, error_code: null } }));
+    }
+    if (url.endsWith("/teacher/processing-jobs/job-1/run") && method === "POST") {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      audioStage = "READY";
+      return route.fulfill(json({ status: "success", data: { id: "job-1", status: "SUCCEEDED", stage: "Transcript ready", recoverable: null, recording_id: "recording-1", resulting_transcript_revision_id: "revision-1", error_code: null } }));
+    }
+    if (url.endsWith("/teacher/term-suggestions/suggestion-1/decision") && method === "POST") {
+      termDecision = "CONFIRMED";
+      return route.fulfill(json({ status: "success", data: audioSummary(v2).latest_revision }));
+    }
     if (url.endsWith(`/student/courses/${courseId}/lesson-overview`)) return route.fulfill(json({ status: "success", data: { course, is_ready: true, selected_context_id: studentVersion === 1 ? v1 : v2, version_number: studentVersion, approved_at: "2026-07-16T09:05:00Z", chapters: [{ id: "chapter", title: "Nutrition in Plants", sequence: 1, lessons: [lesson(studentVersion)] }] } }));
     const contextId = url.match(/\/teacher\/contexts\/([^/]+)/)?.[1];
     if (contextId && method === "POST" && url.endsWith("/submit-for-review")) {
@@ -154,4 +193,62 @@ test("teacher and student layouts remain usable at judge viewport widths", async
     await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
     expect(await page.locator("body").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
+});
+
+test("teacher audio review restores the durable deterministic transcript after reload", async ({ page }) => {
+  await mockJudgeApi(page);
+  await page.goto("/teacher");
+  await page.getByRole("button", { name: /Version 2/ }).click();
+  const workflow = page.getByRole("region", { name: "Recording workflow" });
+  const milestone = (name: string) => workflow.locator("li").filter({ hasText: name });
+  await page.getByLabel("Choose WAV classroom recording").setInputFiles(spokenFixturePath);
+  await expect(milestone("Selected")).toHaveAttribute("aria-current", "step");
+  await page.getByRole("button", { name: "Upload WAV" }).click();
+  await expect(milestone("Uploading")).toHaveAttribute("aria-current", "step");
+  await expect(page.getByRole("button", { name: "Start transcription" })).toBeVisible();
+  await page.getByRole("button", { name: "Start transcription" }).click();
+  await expect(milestone("Transcribing")).toHaveAttribute("aria-current", "step");
+  await expect(page.getByText("photosynthesis-demo.wav")).toBeVisible();
+  await expect(milestone("Transcript ready")).toContainText("Complete");
+  await expect(milestone("Needs review")).toHaveAttribute("aria-current", "step");
+  await expect(page.getByText(/Deterministic offline demo transcript mapped/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("photosynthesis-demo.wav")).toBeVisible();
+  await expect(page.getByText(/Deterministic offline demo transcript mapped/)).toBeVisible();
+  await expect(page.getByText(/chlorophil/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.getByRole("button", { name: "Confirm" })).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Confirm" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Focus Journey restores a paused approved-lesson step after reload", async ({ page }) => {
+  await mockJudgeApi(page);
+  await page.goto("/student");
+  await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+  await page.getByLabel("Photosynthesis").check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "How inputs reach the leaf" })).toBeVisible();
+  await page.getByRole("button", { name: "Pause journey" }).click();
+  await expect(page.getByRole("heading", { name: "Journey paused" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Journey paused" })).toBeVisible();
+  await expect(page.getByText("Focus Journey · Step 2 of 5")).toBeVisible();
+  await page.getByRole("button", { name: "Resume journey" }).click();
+  await expect(page.getByRole("heading", { name: "How inputs reach the leaf" })).toBeVisible();
+  await page.getByRole("button", { name: "Exit to full lesson" }).click();
+  await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
+  await expectNoSeriousAxeViolations(page);
+});
+
+test("browser Back from Focus Journey returns to the approved student lesson", async ({ page }) => {
+  await mockJudgeApi(page);
+  await page.goto("/student");
+  await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Teacher Review Workspace" })).toHaveCount(0);
 });

@@ -1,9 +1,11 @@
 # ruff: noqa: F403, F405
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import FileResponse
 
 from app.api.dependencies import (
+    get_audio_workflow,
     get_completeness,
     get_repository,
     get_review,
@@ -13,6 +15,7 @@ from app.api.dependencies import (
 from app.contracts.common import ErrorResponse, SuccessResponse
 from app.contracts.curriculum_api import *
 from app.repositories.curriculum import CurriculumRepository
+from app.services.audio_workflow import AudioWorkflowService, DemoSegment, WavUpload
 from app.services.context_completeness import ContextCompletenessService
 from app.services.context_versioning import ContextVersioningService
 from app.services.student_curriculum import StudentCurriculumService
@@ -134,6 +137,7 @@ def student_lesson(projection):
                 definition=item.definition,
                 malayalam_explanation=item.malayalam_explanation,
                 sequence=item.sequence,
+                concept_ids=list(item.concept_ids),
                 aliases=[
                     StudentTermAliasResponse.model_validate(alias, from_attributes=True)
                     for alias in item.aliases
@@ -157,6 +161,22 @@ def student_lesson(projection):
             StudentQuestionResponse.model_validate(item, from_attributes=True)
             for item in projection.questions
         ],
+        approved_transcript=(
+            StudentTranscriptResponse(
+                id=projection.approved_transcript.id,
+                recording_id=projection.approved_transcript.recording_id,
+                provenance_label=projection.approved_transcript.provenance_label,
+                source_status=projection.approved_transcript.source_status,
+                teacher_review_status=projection.approved_transcript.teacher_review_status,
+                trusted_context_version=projection.approved_transcript.trusted_context_version,
+                segments=[
+                    StudentTranscriptSegmentResponse.model_validate(item, from_attributes=True)
+                    for item in projection.approved_transcript.segments
+                ],
+            )
+            if projection.approved_transcript
+            else None
+        ),
     )
 
 
@@ -173,6 +193,190 @@ def student_chapters(projections):
         )
         for chapter_projection in projections
     ]
+
+
+def recording_response(recording):
+    return RecordingResponse(
+        id=recording.id,
+        lesson_id=recording.lesson_id,
+        original_filename=recording.original_filename,
+        mime_type=recording.mime_type,
+        byte_size=recording.byte_size,
+        sha256=recording.sha256,
+        duration_ms=recording.duration_ms,
+        source_status=recording.source_status,
+        workflow_status=recording.workflow_status,
+    )
+
+
+def job_response(job):
+    return ProcessingJobResponse(
+        id=job.id,
+        status=job.status,
+        stage=job.progress_message,
+        recoverable=job.recoverable,
+        recording_id=job.entity_id,
+        resulting_transcript_revision_id=job.result_transcript_revision_id,
+        error_code=job.error_code,
+    )
+
+
+def transcript_response(revision):
+    assessment = max(
+        revision.quality_assessments, key=lambda item: (item.created_at, item.id), default=None
+    )
+    suggestions = [
+        suggestion for segment in revision.segments for suggestion in segment.term_suggestions
+    ]
+    glossary_by_id = {item.id: item for item in revision.lecture_audio.lesson.glossary_terms}
+    return TranscriptRevisionResponse(
+        id=revision.id,
+        recording_id=revision.lecture_audio_id,
+        revision_number=revision.revision_number,
+        copied_from_transcript_revision_id=revision.copied_from_transcript_revision_id,
+        source_status=revision.source_status,
+        provider_name=revision.provider_name,
+        provider_version=revision.provider_version,
+        provenance_label=revision.provenance_label,
+        teacher_review_status=revision.teacher_review_status,
+        approved_at=revision.approved_at,
+        segments=[
+            TranscriptSegmentResponse(
+                id=item.id,
+                sequence=item.sequence,
+                start_ms=item.start_ms,
+                end_ms=item.end_ms,
+                text=item.text,
+            )
+            for item in sorted(revision.segments, key=lambda item: (item.sequence, item.id))
+        ],
+        suggestions=[
+            TermSuggestionResponse(
+                id=item.id,
+                transcript_segment_id=item.transcript_segment_id,
+                glossary_term_id=item.glossary_term_id,
+                detected_text=item.detected_text,
+                canonical_term=(
+                    glossary_by_id.get(item.glossary_term_id).canonical_term
+                    if item.glossary_term_id in glossary_by_id
+                    else None
+                ),
+                malayalam_support_label=(
+                    glossary_by_id.get(item.glossary_term_id).malayalam_support_label
+                    if item.glossary_term_id in glossary_by_id
+                    else None
+                ),
+                latest_decision=max(
+                    item.decisions,
+                    key=lambda decision: (decision.created_at, decision.id),
+                    default=None,
+                ).decision
+                if item.decisions
+                else None,
+            )
+            for item in suggestions
+        ],
+        quality=TranscriptQualityResponse(
+            quality_status=assessment.quality_status,
+            reasons=[
+                QualityReasonResponse.model_validate(reason, from_attributes=True)
+                for reason in assessment.reasons
+            ],
+        )
+        if assessment
+        else None,
+    )
+
+
+def audio_workflow_summary_response(snapshot):
+    revision = transcript_response(snapshot.revision) if snapshot.revision is not None else None
+    if revision is not None and snapshot.findings:
+        revision = revision.model_copy(
+            update={
+                "quality": TranscriptQualityResponse(
+                    quality_status=QualityStatus.FAILED,
+                    measured_coverage=snapshot.measured_coverage,
+                    reasons=[
+                        QualityReasonResponse(
+                            reason_code=finding.code,
+                            severity=finding.severity,
+                            message_key=f"quality.{finding.code}",
+                            measured_value=finding.measured,
+                            threshold=finding.threshold,
+                            recovery_action=finding.action,
+                        )
+                        for finding in snapshot.findings
+                    ],
+                )
+            }
+        )
+    elif revision is not None and revision.quality is not None:
+        revision = revision.model_copy(
+            update={
+                "quality": revision.quality.model_copy(
+                    update={"measured_coverage": snapshot.measured_coverage}
+                )
+            }
+        )
+
+    return AudioWorkflowSummaryResponse(
+        context_version_id=snapshot.context_version_id,
+        state=snapshot.state,
+        recording=(
+            AudioWorkflowRecordingResponse(
+                id=snapshot.recording.id,
+                original_filename=snapshot.recording.original_filename,
+                mime_type=snapshot.recording.mime_type,
+                duration_ms=snapshot.recording.duration_ms,
+                source_status=snapshot.recording.source_status,
+                created_at=snapshot.recording.created_at,
+                content_url=f"/api/v1/teacher/recordings/{snapshot.recording.id}/content",
+            )
+            if snapshot.recording is not None
+            else None
+        ),
+        latest_job=(
+            AudioWorkflowJobResponse(
+                id=snapshot.job.id,
+                status=snapshot.job.status,
+                stage=snapshot.job.progress_message,
+                recoverable=snapshot.job.recoverable,
+                error_code=snapshot.job.error_code,
+                message=(
+                    "No offline demo transcript is available for this recording."
+                    if snapshot.job.error_code == "demo_audio_unrecognized"
+                    else "Transcription needs teacher attention."
+                    if snapshot.job.status in {JobStatus.FAILED, JobStatus.CANCELLED}
+                    else None
+                ),
+            )
+            if snapshot.job is not None
+            else None
+        ),
+        latest_revision=revision,
+        deletion=(
+            AudioWorkflowDeletionResponse(
+                status=snapshot.tombstone.status.value,
+                recoverable=True,
+                message=(
+                    "Recording cleanup needs attention before another recording can be used."
+                    if snapshot.tombstone.status.value == "RECOVERY_CONFLICT"
+                    else "Recording removal is still being completed."
+                ),
+            )
+            if snapshot.tombstone is not None
+            else None
+        ),
+        capabilities=AudioWorkflowCapabilitiesResponse(
+            can_start_processing=snapshot.capabilities.can_start_processing,
+            can_retry_processing=snapshot.capabilities.can_retry_processing,
+            can_enter_manual_transcript=snapshot.capabilities.can_enter_manual_transcript,
+            can_edit_transcript=snapshot.capabilities.can_edit_transcript,
+            can_assess_quality=snapshot.capabilities.can_assess_quality,
+            can_approve_transcript=snapshot.capabilities.can_approve_transcript,
+            can_remove_recording=snapshot.capabilities.can_remove_recording,
+        ),
+    )
 
 
 @router.get(
@@ -234,6 +438,20 @@ def detail(
             completeness=completeness(service.evaluate(c.id)),
             review_events=[event(x) for x in repo.list_review_events(c.id)],
         )
+    )
+
+
+@router.get(
+    "/curriculum/context-versions/{context_version_id}/audio-workflow",
+    response_model=SuccessResponse[AudioWorkflowSummaryResponse],
+    operation_id="get_teacher_audio_workflow",
+)
+def audio_workflow_summary(
+    context_version_id: str,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    return SuccessResponse(
+        data=audio_workflow_summary_response(service.get_workflow_summary(context_version_id))
     )
 
 
@@ -299,6 +517,179 @@ def copy(
     return SuccessResponse(
         data=summary(svc.create_draft_from_approved(context_id, note=body.note if body else None))
     )
+
+
+@router.post(
+    "/teacher/lessons/{lesson_id}/recordings",
+    response_model=SuccessResponse[RecordingResponse],
+    operation_id="upload_classroom_wav",
+)
+async def upload_recording(
+    lesson_id: str,
+    request: Request,
+    x_filename: Annotated[str, Header(alias="X-Filename")],
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    recording = service.upload(
+        lesson_id,
+        WavUpload(
+            filename=x_filename,
+            declared_mime_type=request.headers.get("content-type", ""),
+            data=await request.body(),
+        ),
+    )
+    return SuccessResponse(data=recording_response(recording))
+
+
+@router.post(
+    "/teacher/recordings/{recording_id}/transcriptions",
+    response_model=SuccessResponse[ProcessingJobResponse],
+    operation_id="request_recording_transcription",
+)
+def request_transcription(
+    recording_id: str,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    return SuccessResponse(data=job_response(service.request_transcription(recording_id)))
+
+
+@router.get(
+    "/teacher/recordings/{recording_id}/content",
+    operation_id="get_recording_content",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Root-contained classroom WAV bytes.",
+            "content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
+def recording_content(
+    recording_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]
+):
+    recording = service.get_recording(recording_id)
+    return FileResponse(service.recording_path(recording_id), media_type=recording.mime_type)
+
+
+@router.delete(
+    "/curriculum/context-versions/{context_version_id}/recordings/{recording_id}",
+    response_model=SuccessResponse[RecordingRemovalResponse],
+    operation_id="remove_classroom_recording",
+)
+def remove_recording(
+    context_version_id: str,
+    recording_id: str,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    return SuccessResponse(
+        data=RecordingRemovalResponse(
+            recording_id=recording_id,
+            removed=service.delete_recording(
+                recording_id, expected_context_version_id=context_version_id
+            ),
+        )
+    )
+
+
+@router.get(
+    "/teacher/processing-jobs/{job_id}",
+    response_model=SuccessResponse[ProcessingJobResponse],
+    operation_id="get_processing_job",
+)
+def get_job(job_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]):
+    return SuccessResponse(data=job_response(service.get_job(job_id)))
+
+
+@router.post(
+    "/teacher/processing-jobs/{job_id}/run",
+    response_model=SuccessResponse[ProcessingJobResponse],
+    operation_id="run_processing_job",
+)
+def run_job(job_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]):
+    return SuccessResponse(data=job_response(service.run_job(job_id)))
+
+
+@router.get(
+    "/teacher/transcript-revisions/{revision_id}",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="get_transcript_revision",
+)
+def get_revision(
+    revision_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]
+):
+    return SuccessResponse(data=transcript_response(service.get_revision(revision_id)))
+
+
+@router.post(
+    "/teacher/term-suggestions/{suggestion_id}/decision",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="decide_transcript_term",
+)
+def decide_term(
+    suggestion_id: str,
+    body: TermDecisionRequest,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    return SuccessResponse(
+        data=transcript_response(service.record_decision(suggestion_id, body.decision))
+    )
+
+
+@router.post(
+    "/teacher/transcript-revisions/{revision_id}/manual-revision",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="create_manual_transcript_revision",
+)
+def manual_revision(
+    revision_id: str,
+    body: TranscriptManualRevisionRequest,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    segments = tuple(DemoSegment(**segment.model_dump()) for segment in body.segments)
+    return SuccessResponse(
+        data=transcript_response(service.create_manual_revision(revision_id, segments))
+    )
+
+
+@router.post(
+    "/teacher/recordings/{recording_id}/manual-revision",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="create_recording_manual_transcript_revision",
+)
+def recording_manual_revision(
+    recording_id: str,
+    body: TranscriptManualRevisionRequest,
+    service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)],
+):
+    segments = tuple(DemoSegment(**segment.model_dump()) for segment in body.segments)
+    return SuccessResponse(
+        data=transcript_response(
+            service.create_manual_revision_for_recording(recording_id, segments)
+        )
+    )
+
+
+@router.post(
+    "/teacher/transcript-revisions/{revision_id}/quality-assessment",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="assess_transcript_quality",
+)
+def assess_transcript(
+    revision_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]
+):
+    service.assess_quality(revision_id)
+    return SuccessResponse(data=transcript_response(service.get_revision(revision_id)))
+
+
+@router.post(
+    "/teacher/transcript-revisions/{revision_id}/approve",
+    response_model=SuccessResponse[TranscriptRevisionResponse],
+    operation_id="approve_transcript_revision",
+)
+def approve_transcript(
+    revision_id: str, service: Annotated[AudioWorkflowService, Depends(get_audio_workflow)]
+):
+    return SuccessResponse(data=transcript_response(service.approve_transcript(revision_id)))
 
 
 @router.get(

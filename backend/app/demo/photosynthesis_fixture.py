@@ -24,6 +24,7 @@ from app.models.foundation import (
     ASRMisrecognition,
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     ConceptRelationship,
     ContextReviewEvent,
     Course,
@@ -91,6 +92,7 @@ _EXPECTED_CONTEXT_CHILD_COUNTS = {
         "concepts": 5,
         "relationships": 4,
         "questions": 3,
+        "concept_glossary_term_links": 10,
     },
     CONTEXT_V2_ID: {
         "chapters": 1,
@@ -103,6 +105,7 @@ _EXPECTED_CONTEXT_CHILD_COUNTS = {
         "concepts": 5,
         "relationships": 4,
         "questions": 4,
+        "concept_glossary_term_links": 10,
     },
 }
 
@@ -271,6 +274,7 @@ def _has_expected_context_graph(
         "concepts": len(lesson.concepts),
         "relationships": len(lesson.concept_relationships),
         "questions": len(lesson.questions),
+        "concept_glossary_term_links": len(context.concept_glossary_term_links),
     }
     return counts == expected_counts
 
@@ -476,8 +480,10 @@ def _add_context(
             )
         ]
     )
+    glossary_ids: dict[str, str] = {}
     for sequence, (term, support_label, definition) in enumerate(GLOSSARY, 1):
         glossary_id = _stable_id(f"{label}-glossary-{sequence}")
+        glossary_ids[term] = glossary_id
         session.add(
             GlossaryTerm(
                 id=glossary_id,
@@ -526,6 +532,26 @@ def _add_context(
                 sequence=sequence,
             )
         )
+    concept_glossary_terms = {
+        "plant-inputs": ("Carbon dioxide", "Water", "Sunlight"),
+        "inputs-reach-leaf": ("Carbon dioxide", "Water", "Leaf"),
+        "sunlight-chlorophyll": ("Chlorophyll", "Sunlight"),
+        "glucose-production": ("Glucose",),
+        "oxygen-release": ("Oxygen",),
+    }
+    session.add_all(
+        [
+            ConceptGlossaryTermLink(
+                id=_stable_id(f"{label}-concept-glossary-{concept_sequence}-{term_sequence}"),
+                context_version_id=context_id,
+                concept_id=concept_ids[concept_sequence - 1],
+                glossary_term_id=glossary_ids[term],
+                sequence=term_sequence,
+            )
+            for concept_sequence, (concept_key, _, _) in enumerate(CONCEPTS, 1)
+            for term_sequence, term in enumerate(concept_glossary_terms[concept_key], 1)
+        ]
+    )
     session.add_all(
         [
             ConceptRelationship(

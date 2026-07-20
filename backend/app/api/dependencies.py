@@ -1,12 +1,13 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models.foundation import utcnow
 from app.repositories.curriculum import CurriculumRepository
+from app.services.audio_workflow import AudioWorkflowService
 from app.services.context_completeness import ContextCompletenessService
 from app.services.context_versioning import ContextVersioningService
 from app.services.health import HealthService
@@ -47,3 +48,14 @@ def get_student(
     repository: Annotated[CurriculumRepository, Depends(get_repository)],
 ) -> StudentCurriculumService:
     return StudentCurriculumService(repository)
+
+
+def get_audio_workflow(
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AudioWorkflowService:
+    return AudioWorkflowService(
+        session,
+        settings,
+        session_factory=sessionmaker(bind=session.get_bind(), autocommit=False, autoflush=False),
+    )

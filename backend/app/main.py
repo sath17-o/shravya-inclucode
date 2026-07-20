@@ -2,12 +2,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import inspect
+from sqlalchemy.orm import sessionmaker
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
 from app.contracts.common import ErrorResponse
 from app.contracts.teacher_review import DomainError
 from app.core.config import get_settings
+from app.db.session import create_db_engine
+from app.services.audio_workflow import recover_pending_audio_uploads
 
 
 def create_app() -> FastAPI:
@@ -20,6 +24,27 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
     )
+
+    @app.on_event("startup")
+    def recover_audio_upload_intents_at_startup() -> None:
+        """Resolve any crash-surviving upload intent before accepting uploads."""
+
+        factory = getattr(app.state, "audio_session_factory", None)
+        engine = None
+        if factory is None:
+            engine = create_db_engine(settings.database_url)
+            factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+        try:
+            # Older development databases can still boot long enough to run
+            # their required Alembic upgrade. Once Phase 3B's table exists,
+            # recovery is mandatory before the application accepts uploads.
+            with factory() as session:
+                has_upload_intents = inspect(session.get_bind()).has_table("media_upload_intents")
+            if has_upload_intents:
+                recover_pending_audio_uploads(settings, factory, raise_on_conflict=False)
+        finally:
+            if engine is not None:
+                engine.dispose()
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

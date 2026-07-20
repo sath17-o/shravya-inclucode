@@ -22,6 +22,7 @@ from app.models.foundation import (
     ASRMisrecognition,
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     ConceptRelationship,
     ContextReviewEvent,
     Course,
@@ -159,6 +160,10 @@ def concept_relationship(**overrides: Any) -> ConceptRelationship:
     )
 
 
+def concept_glossary_term_link(**overrides: Any) -> ConceptGlossaryTermLink:
+    return _build(ConceptGlossaryTermLink, {"sequence": 1}, overrides)
+
+
 def question_item(**overrides: Any) -> QuestionItem:
     return _build(
         QuestionItem,
@@ -278,6 +283,15 @@ def complete_photosynthesis_context(
                 target_concept_id=concepts[1].id,
             ),
             question_item(lesson=lesson_model, related_concept_id=concepts[0].id),
+            *[
+                concept_glossary_term_link(
+                    context_version=context,
+                    concept=concept_model,
+                    glossary_term=glossary_terms[index],
+                    sequence=1,
+                )
+                for index, concept_model in enumerate(concepts)
+            ],
         ]
     )
     session.flush()

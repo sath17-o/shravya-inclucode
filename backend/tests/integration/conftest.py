@@ -46,6 +46,9 @@ def migrated_api(tmp_path: Path) -> Generator[MigratedApiHarness, None, None]:
         assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
 
     app = create_app()
+    # Startup recovery must use the same Alembic-migrated temporary database
+    # as the request dependency, never the developer's local database.
+    app.state.audio_session_factory = session_factory
 
     def override_session() -> Generator[Session, None, None]:
         session = session_factory()

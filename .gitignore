@@ -12,12 +12,14 @@ backend/.coverage
 *.db
 *.sqlite
 *.sqlite3
+.runtime/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/playwright-report/
 frontend/test-results/
+/test-results/
 .vite/
 
 # Editors and operating systems

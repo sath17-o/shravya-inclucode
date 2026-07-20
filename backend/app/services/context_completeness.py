@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.enums import TeacherReviewStatus
+from app.contracts.enums import QualityStatus, TeacherReviewStatus
 from app.contracts.teacher_review import (
     ContextCompletenessIssue,
     ContextCompletenessResult,
     DomainError,
 )
+from app.core.config import get_settings
 from app.models.foundation import CourseContextVersion, Lesson
 from app.repositories.curriculum import CurriculumRepository
+from app.services.transcript_quality import evaluate_transcript_quality
 
 
 @dataclass(frozen=True)
@@ -115,12 +117,16 @@ class ContextCompletenessService:
 
         issues.extend(self._empty_text_issues(context, lessons))
         issues.extend(self._relationship_issues(lessons))
+        issues.extend(self._audio_transcript_issues(lessons))
+        active_sections = SECTION_ORDER + (
+            ("classroom_transcript",) if any(lesson.audio_assets for lesson in lessons) else ()
+        )
         issues.sort(
-            key=lambda issue: (SECTION_ORDER.index(issue.section), issue.code, issue.field or "")
+            key=lambda issue: (active_sections.index(issue.section), issue.code, issue.field or "")
         )
         incomplete_sections = [
             section
-            for section in SECTION_ORDER
+            for section in active_sections
             if any(issue.section == section for issue in issues)
         ]
         return ContextCompletenessResult(
@@ -128,7 +134,7 @@ class ContextCompletenessService:
             is_complete=not issues,
             issues=issues,
             completed_sections=[
-                section for section in SECTION_ORDER if section not in incomplete_sections
+                section for section in active_sections if section not in incomplete_sections
             ],
             incomplete_sections=incomplete_sections,
         )
@@ -206,6 +212,51 @@ class ContextCompletenessService:
                             "concept_relationship_crosses_lesson",
                             "relationships",
                             relationship.id,
+                        )
+                    )
+        return issues
+
+    def _audio_transcript_issues(self, lessons: list[Lesson]) -> list[ContextCompletenessIssue]:
+        """Audio is opt-in for legacy contexts, but trusted once added to a draft."""
+        issues: list[ContextCompletenessIssue] = []
+        for lesson in lessons:
+            for recording in lesson.audio_assets:
+                revisions = sorted(
+                    recording.transcript_revisions,
+                    key=lambda item: (item.revision_number, item.id),
+                )
+                latest = revisions[-1] if revisions else None
+                if latest is None:
+                    issues.append(
+                        self._issue(
+                            "recording_missing_transcript", "classroom_transcript", recording.id
+                        )
+                    )
+                    continue
+                findings = evaluate_transcript_quality(
+                    latest,
+                    get_settings().demo_minimum_timestamp_coverage,
+                    latest_revision_id=latest.id,
+                )
+                assessment = max(
+                    latest.quality_assessments,
+                    key=lambda item: (item.created_at, item.id),
+                    default=None,
+                )
+                if (
+                    findings
+                    or assessment is None
+                    or assessment.quality_status is not QualityStatus.VERIFIED
+                ):
+                    issues.append(
+                        self._issue(
+                            "transcript_quality_not_verified", "classroom_transcript", latest.id
+                        )
+                    )
+                if latest.teacher_review_status is not TeacherReviewStatus.APPROVED:
+                    issues.append(
+                        self._issue(
+                            "transcript_not_teacher_approved", "classroom_transcript", latest.id
                         )
                     )
         return issues

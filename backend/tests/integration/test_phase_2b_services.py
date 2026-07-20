@@ -27,6 +27,7 @@ from app.models.foundation import (
     ASRMisrecognition,
     Chapter,
     Concept,
+    ConceptGlossaryTermLink,
     ConceptRelationship,
     Course,
     CourseContextVersion,
@@ -185,6 +186,17 @@ def complete_context(session: Session, version: int = 1, course: Course | None =
             teacher_review_status=TeacherReviewStatus.APPROVED,
         )
     )
+    session.add_all(
+        [
+            ConceptGlossaryTermLink(
+                context_version_id=context.id,
+                concept_id=concept.id,
+                glossary_term_id=glossary_terms[index].id,
+                sequence=1,
+            )
+            for index, concept in enumerate(concepts)
+        ]
+    )
     session.commit()
     return course, context, lesson
 
@@ -262,6 +274,23 @@ def test_approved_context_copy_remaps_all_owned_references(session: Session) -> 
         copied_relationship.source_concept_id,
         copied_relationship.target_concept_id,
     } <= copied_concepts
+    source_links = source_graph.concept_glossary_term_links
+    copied_links = copied_graph.concept_glossary_term_links
+    copied_glossary_ids = {
+        glossary.id
+        for lesson in copied_graph.chapters[0].lessons
+        for glossary in lesson.glossary_terms
+    }
+    assert len(copied_links) == len(source_links)
+    assert {link.context_version_id for link in copied_links} == {copied.id}
+    assert {link.concept_id for link in copied_links} <= copied_concepts
+    assert {link.glossary_term_id for link in copied_links} <= copied_glossary_ids
+    assert {link.concept_id for link in copied_links}.isdisjoint(
+        {link.concept_id for link in source_links}
+    )
+    assert {link.glossary_term_id for link in copied_links}.isdisjoint(
+        {link.glossary_term_id for link in source_links}
+    )
     assert [event.event_type.value for event in repository.list_review_events(copied.id)] == [
         "copied_to_new_draft"
     ]

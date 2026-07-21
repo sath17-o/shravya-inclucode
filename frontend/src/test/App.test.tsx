@@ -130,7 +130,10 @@ describe("Phase 3A curriculum experience", () => {
     expect(screen.getByText("Trusted version 1")).toBeInTheDocument();
     expect(screen.getAllByText("പ്രകാശസംശ്ലേഷണം").length).toBeGreaterThan(0);
     expect(screen.getAllByText("ക്ലോറോഫിൽ").length).toBeGreaterThan(0);
-    expect(screen.getByText("Heard as:")).toHaveTextContent("chlorophil");
+    expect(screen.getByRole("heading", { name: "Confirmed classroom term" })).toBeInTheDocument();
+    expect(screen.getAllByText("Chlorophyll")[0]).toBeInTheDocument();
+    expect(screen.queryByText("chlorophil", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Confirm|Reject|Unsure/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Improved teacher explanation")).not.toBeInTheDocument();
     expect(screen.getByText("Follow the lesson from what plants need to the oxygen they release.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Question Explorer" })).toBeInTheDocument();
@@ -147,6 +150,9 @@ describe("Phase 3A curriculum experience", () => {
     ).toBeInTheDocument();
     const corrected = screen.getByRole("link", { name: /Chlorophyll/ });
     expect(corrected).toHaveAttribute("href", "#glossary-chlorophyll");
+    expect(screen.queryByText("chlorophil", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Teacher-reviewed status", { exact: false })).not.toBeInTheDocument();
+    expect(screen.getByText("Trusted classroom record · version 1")).toBeInTheDocument();
   });
 
   it("reconstructs every durable recording milestone with text, markers, and ordered-list semantics", async () => {

@@ -53,6 +53,10 @@ def test_curriculum_openapi_contract_is_typed_and_has_no_out_of_scope_routes() -
     assert "newly_staled_artifact_count" in approval_properties
     not_ready_properties = components["StudentLessonOverviewResponse"]["properties"]
     assert {"is_ready", "selected_context_id", "chapters"} <= set(not_ready_properties)
+    assert "misrecognitions" not in components["StudentGlossaryTermResponse"]["properties"]
+    assert "misrecognitions" in components["GlossaryTermResponse"]["properties"]
+    assert "teacher_review_status" not in components["StudentTranscriptResponse"]["properties"]
+    assert "teacher_review_status" in components["TranscriptRevisionResponse"]["properties"]
     assert len(components) == len(set(components))
     assert not {"Course", "Lesson", "GeneratedArtifact", "ContextReviewEvent"} & set(components)
     assert not any(

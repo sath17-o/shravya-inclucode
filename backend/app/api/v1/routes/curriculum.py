@@ -142,10 +142,6 @@ def student_lesson(projection):
                     StudentTermAliasResponse.model_validate(alias, from_attributes=True)
                     for alias in item.aliases
                 ],
-                misrecognitions=[
-                    StudentASRMisrecognitionResponse.model_validate(variant, from_attributes=True)
-                    for variant in item.misrecognitions
-                ],
             )
             for item in projection.glossary_terms
         ],
@@ -167,7 +163,6 @@ def student_lesson(projection):
                 recording_id=projection.approved_transcript.recording_id,
                 provenance_label=projection.approved_transcript.provenance_label,
                 source_status=projection.approved_transcript.source_status,
-                teacher_review_status=projection.approved_transcript.teacher_review_status,
                 trusted_context_version=projection.approved_transcript.trusted_context_version,
                 segments=[
                     StudentTranscriptSegmentResponse.model_validate(item, from_attributes=True)

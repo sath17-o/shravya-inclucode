@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { apiBaseUrl, ApiError, curriculumApi } from "../api/client";
-import type { AudioWorkflowSummary, Completeness, ContextDetail, ContextSummary, Lesson, Recording, StudentOverview, TranscriptRevision, TranscriptSegmentInput } from "../api/contracts";
+import type { AudioWorkflowSummary, Completeness, ContextDetail, ContextSummary, Lesson, Recording, StudentLesson, StudentOverview, TranscriptRevision, TranscriptSegmentInput } from "../api/contracts";
 import { useAppContext } from "../app/AppContext";
 import { Button, ErrorAlert, StatusMessage } from "../components/primitives";
 import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../demo/config";
@@ -702,11 +702,11 @@ function TeacherAudioWorkflow({
   </section>;
 }
 
-function ConceptFlow({ lesson }: { lesson: Lesson }) {
+function ConceptFlow({ lesson }: { lesson: Lesson | StudentLesson }) {
   return <ol className="concept-flow">{lesson.concepts.map((concept) => <li key={concept.id}><span className="concept-number">{concept.sequence}</span><Bilingual english={concept.title} malayalam={concept.malayalam_title} /></li>)}</ol>;
 }
 
-function QuestionList({ lesson }: { lesson: Lesson }) {
+function QuestionList({ lesson }: { lesson: Lesson | StudentLesson }) {
   return (
     <ol className="question-list">
       {lesson.questions.map((question) => (
@@ -752,7 +752,6 @@ export function StudentLessonPage() {
   if (!lesson) return <section className="empty-state"><h1>Lesson unavailable</h1><p>There is no approved lesson content to show yet.</p></section>;
   const photosynthesis = lesson.glossary_terms.find((term) => term.canonical_term === "Photosynthesis");
   const chlorophyll = lesson.glossary_terms.find((term) => term.canonical_term === "Chlorophyll");
-  const correction = lesson.glossary_terms.flatMap((term) => term.misrecognitions.map((item) => ({ term, item }))).find(({ item }) => item.detected_text.toLowerCase() === "chlorophil");
   const focusKey = focusJourneyStorageKey(state.data);
   const focusSteps = buildFocusJourneySteps(lesson);
   const hasStartedFocusJourney = focusKey !== null && hasStoredFocusJourneyProgress(focusKey, focusSteps);
@@ -765,7 +764,7 @@ export function StudentLessonPage() {
         {photosynthesis?.malayalam_support_label ? <p className="hero-malayalam" lang="ml">{photosynthesis.malayalam_support_label}</p> : null}
         <p className="trusted-version">Trusted version {state.data.version_number}</p>
       </header>
-      {lesson.approved_transcript ? <section className="student-section approved-transcript" aria-labelledby="approved-transcript-title"><div><p className="eyebrow">Trusted classroom record</p><h2 id="approved-transcript-title">Approved classroom transcript</h2><p>{lesson.approved_transcript.provenance_label}</p><p>Teacher-reviewed status · trusted context version {lesson.approved_transcript.trusted_context_version}</p></div><ol className="transcript-segments">{lesson.approved_transcript.segments.map((segment) => <li key={segment.id}><time>{(segment.start_ms / 1000).toFixed(1)}–{(segment.end_ms / 1000).toFixed(1)}s</time><span lang="ml">{segment.text.includes("Chlorophyll") ? <><a href="#glossary-chlorophyll" className="glossary-link">{segment.text}</a></> : segment.text}</span></li>)}</ol></section> : null}
+      {lesson.approved_transcript ? <section className="student-section approved-transcript" aria-labelledby="approved-transcript-title"><div><p className="eyebrow">Trusted classroom record</p><h2 id="approved-transcript-title">Approved classroom transcript</h2><p>{lesson.approved_transcript.provenance_label}</p><p>Trusted classroom record · version {lesson.approved_transcript.trusted_context_version}</p></div><ol className="transcript-segments">{lesson.approved_transcript.segments.map((segment) => <li key={segment.id}><time>{(segment.start_ms / 1000).toFixed(1)}–{(segment.end_ms / 1000).toFixed(1)}s</time><span lang="ml">{segment.text.includes("Chlorophyll") ? <><a href="#glossary-chlorophyll" className="glossary-link">{segment.text}</a></> : segment.text}</span></li>)}</ol></section> : null}
       <section className="student-section orientation"><h2>Lesson orientation</h2><p className="pre-line">{lesson.description}</p><h3>What you will learn</h3><ol className="stack-list">{lesson.objectives.map((objective) => <li key={objective.id}><Bilingual english={objective.objective_text} malayalam={objective.malayalam_text} /></li>)}</ol></section>
       <section className="student-section focus-entry" aria-labelledby="focus-entry-title">
         <p className="eyebrow">Step-by-step support</p>
@@ -775,7 +774,7 @@ export function StudentLessonPage() {
         <Button onClick={() => navigate("/student/focus")} type="button">{hasStartedFocusJourney ? "Resume Focus Journey" : "Start Focus Journey"}</Button>
       </section>
       <section className="student-section"><h2>Trusted explanation</h2><div className="material-grid">{lesson.approved_materials.map((material) => <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><p className="pre-line">{material.content}</p></article>)}</div></section>
-      <section className="student-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" id={term.canonical_term === "Chlorophyll" ? "glossary-chlorophyll" : undefined} key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div>{correction ? <aside className="term-correction"><h3>Classroom term check</h3><p>Heard as: <strong>{correction.item.detected_text}</strong></p><p>Confirmed term: <strong>{correction.term.canonical_term}</strong></p><p>Malayalam: <strong lang="ml">{correction.term.malayalam_support_label}</strong></p></aside> : null}{!correction && chlorophyll ? <aside className="term-correction"><h3>Classroom term check</h3><p>Confirmed term: <strong>{chlorophyll.canonical_term}</strong></p></aside> : null}</section>
+      <section className="student-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" id={term.canonical_term === "Chlorophyll" ? "glossary-chlorophyll" : undefined} key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div>{chlorophyll ? <aside className="term-correction"><h3>Confirmed classroom term</h3><p><strong>{chlorophyll.canonical_term}</strong></p>{chlorophyll.malayalam_support_label ? <p>Malayalam: <strong lang="ml">{chlorophyll.malayalam_support_label}</strong></p> : null}</aside> : null}</section>
       <section className="student-section"><h2>Concept flow</h2><p>Follow the lesson from what plants need to the oxygen they release.</p><ConceptFlow lesson={lesson} /></section>
       <section className="student-section"><h2>Question Explorer</h2><p>Use these teacher-approved questions to notice what the lesson asks you to explain.</p><QuestionList lesson={lesson} /></section>
     </article>

@@ -1423,29 +1423,6 @@
         "title": "SourceStatus",
         "type": "string"
       },
-      "StudentASRMisrecognitionResponse": {
-        "properties": {
-          "detected_text": {
-            "title": "Detected Text",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "normalized_text": {
-            "title": "Normalized Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "detected_text",
-          "normalized_text"
-        ],
-        "title": "StudentASRMisrecognitionResponse",
-        "type": "object"
-      },
       "StudentApprovedMaterialResponse": {
         "properties": {
           "content": {
@@ -1601,13 +1578,6 @@
               }
             ],
             "title": "Malayalam Support Label"
-          },
-          "misrecognitions": {
-            "items": {
-              "$ref": "#/components/schemas/StudentASRMisrecognitionResponse"
-            },
-            "title": "Misrecognitions",
-            "type": "array"
           },
           "sequence": {
             "title": "Sequence",
@@ -1903,9 +1873,6 @@
           "source_status": {
             "$ref": "#/components/schemas/SourceStatus"
           },
-          "teacher_review_status": {
-            "$ref": "#/components/schemas/TeacherReviewStatus"
-          },
           "trusted_context_version": {
             "title": "Trusted Context Version",
             "type": "integer"
@@ -1916,7 +1883,6 @@
           "recording_id",
           "provenance_label",
           "source_status",
-          "teacher_review_status",
           "trusted_context_version"
         ],
         "title": "StudentTranscriptResponse",

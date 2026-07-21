@@ -54,13 +54,6 @@ class StudentTermAliasProjection:
 
 
 @dataclass(frozen=True, slots=True)
-class StudentASRVariantProjection:
-    id: str
-    detected_text: str
-    normalized_text: str
-
-
-@dataclass(frozen=True, slots=True)
 class StudentGlossaryTermProjection:
     id: str
     canonical_term: str
@@ -70,7 +63,6 @@ class StudentGlossaryTermProjection:
     sequence: int
     concept_ids: tuple[str, ...]
     aliases: tuple[StudentTermAliasProjection, ...]
-    misrecognitions: tuple[StudentASRVariantProjection, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,7 +114,6 @@ class StudentTranscriptProjection:
     recording_id: str
     provenance_label: str
     source_status: str
-    teacher_review_status: str
     trusted_context_version: int
     segments: tuple[StudentTranscriptSegmentProjection, ...]
 
@@ -280,17 +271,6 @@ class StudentCurriculumService:
                             item.aliases, key=lambda alias: (alias.normalized_alias, alias.id)
                         )
                     ),
-                    misrecognitions=tuple(
-                        StudentASRVariantProjection(
-                            id=variant.id,
-                            detected_text=variant.detected_text,
-                            normalized_text=variant.normalized_text,
-                        )
-                        for variant in sorted(
-                            item.misrecognitions,
-                            key=lambda variant: (variant.normalized_text, variant.id),
-                        )
-                    ),
                 )
                 for item in sorted(lesson.glossary_terms, key=lambda item: (item.sequence, item.id))
             ),
@@ -395,7 +375,6 @@ class StudentCurriculumService:
             recording_id=revision.lecture_audio_id,
             provenance_label=revision.provenance_label,
             source_status=revision.source_status.value,
-            teacher_review_status=revision.teacher_review_status.value,
             trusted_context_version=context_version,
             segments=tuple(
                 StudentTranscriptSegmentProjection(

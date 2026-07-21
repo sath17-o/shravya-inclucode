@@ -102,12 +102,17 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByText("Trusted version 2")).toBeVisible();
     const trustedTranscript = page.locator("section.approved-transcript");
     await expect(trustedTranscript).toContainText("Deterministic offline demo transcript");
+    await expect(trustedTranscript).toContainText("Trusted classroom record · version 2");
+    await expect(trustedTranscript).not.toContainText("Teacher-reviewed status");
     await expect(trustedTranscript).toContainText("Chlorophyll");
-    await expect(trustedTranscript).not.toContainText("chlorophil");
+    await expect(trustedTranscript).not.toContainText(/\bchlorophil\b/);
     await expect(trustedTranscript.locator(".transcript-segments li")).toHaveCount(3);
     await expect(page.getByRole("button", { name: "Confirm" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Unsure" })).toHaveCount(0);
     await expect(page.getByText("Chlorophyll").first()).toBeVisible();
     await expect(page.getByText("ക്ലോറോഫിൽ").first()).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/\bchlorophil\b/);
     await expect(page.getByRole("heading", { name: "Lesson orientation" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Concept flow" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Question Explorer" })).toBeVisible();

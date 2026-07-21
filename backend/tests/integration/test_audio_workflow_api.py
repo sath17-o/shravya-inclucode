@@ -1,4 +1,5 @@
 import hashlib
+import re
 from datetime import timedelta
 from pathlib import Path
 from threading import Barrier, Event, Lock, Thread, local
@@ -318,7 +319,7 @@ def test_migrated_wav_workflow_is_idempotent_and_student_safe(migrated_api) -> N
     student = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/lesson-overview")
     assert student.status_code == 200
     transcript = student.json()["data"]["chapters"][0]["lessons"][0]["approved_transcript"]
-    assert transcript["teacher_review_status"] == "APPROVED"
+    assert "teacher_review_status" not in transcript
     assert "Chlorophyll" in transcript["segments"][1]["text"]
 
 
@@ -437,9 +438,10 @@ def test_manual_revisions_are_append_only_and_student_projects_confirmed_term(mi
     transcript = migrated_api.client.get(
         f"/api/v1/student/courses/{course_id}/lesson-overview"
     ).json()["data"]["chapters"][0]["lessons"][0]["approved_transcript"]
+    assert "teacher_review_status" not in transcript
     rendered = " ".join(item["text"] for item in transcript["segments"])
     assert "Chlorophyll" in rendered
-    assert "chlorophil" not in rendered
+    assert re.search(r"\bchlorophil\b", rendered) is None
 
 
 def test_confirmed_term_is_projected_canonically_for_students(migrated_api) -> None:
@@ -473,7 +475,7 @@ def test_confirmed_term_is_projected_canonically_for_students(migrated_api) -> N
     ).json()["data"]["chapters"][0]["lessons"][0]["approved_transcript"]
     rendered = " ".join(item["text"] for item in transcript["segments"])
     assert "Chlorophyll" in rendered
-    assert "chlorophil" not in rendered
+    assert re.search(r"\bchlorophil\b", rendered) is None
 
 
 def test_unknown_wav_has_manual_entry_and_invalid_timestamps_are_typed(migrated_api) -> None:

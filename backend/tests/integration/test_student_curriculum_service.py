@@ -128,6 +128,8 @@ def test_student_service_projection_selects_only_approved_context_and_children(
         lesson.concepts[0].id,
         lesson.concepts[1].id,
     )
+    assert lesson.glossary_terms[1].canonical_term == "Chlorophyll"
+    assert not hasattr(lesson.glossary_terms[1], "misrecognitions")
     assert not hasattr(lesson, "lesson")
     assert not hasattr(lesson, "teacher_review_status")
     assert_scalar_only(projection)

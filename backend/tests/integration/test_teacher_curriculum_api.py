@@ -170,6 +170,8 @@ def test_teacher_detail_serializes_deterministic_complete_curriculum(migrated_ap
         "a chlorophyll",
         "chlorophil",
     ]
+    assert lesson_data["glossary_terms"][1]["misrecognitions"][1]["detected_text"] == "chlorophil"
+    assert lesson_data["glossary_terms"][1]["canonical_term"] == "Chlorophyll"
     assert [item["id"] for item in data["review_events"]] == ["event-a", "event-b"]
     assert data["review_events"][0]["event_type"] == "draft_created"
     assert data["review_events"][0]["actor_role"] == "teacher"

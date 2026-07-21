@@ -68,8 +68,9 @@ export type GlossaryTerm = {
   sequence: number;
   concept_ids: string[];
   aliases: { id: string; alias: string; normalized_alias: string }[];
-  misrecognitions: { id: string; detected_text: string; normalized_text: string; source_note?: string | null }[];
+  misrecognitions?: { id: string; detected_text: string; normalized_text: string; source_note?: string | null }[];
 };
+export type StudentGlossaryTerm = Omit<GlossaryTerm, "misrecognitions">;
 export type Concept = {
   id: string;
   concept_key: string;
@@ -105,6 +106,7 @@ export type Lesson = {
   questions: Question[];
   approved_transcript: StudentTranscript | null;
 };
+export type StudentLesson = Omit<Lesson, "glossary_terms"> & { glossary_terms: StudentGlossaryTerm[] };
 export type Recording = { id: string; lesson_id: string; original_filename: string; mime_type: string; byte_size: number; sha256: string; duration_ms: number; source_status: string; workflow_status: string };
 export type RecordingRemoval = { recording_id: string; removed: boolean };
 export type ProcessingJob = { id: string; status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED"; stage: string; recoverable: boolean | null; recording_id: string; resulting_transcript_revision_id: string | null; error_code: string | null };
@@ -123,8 +125,9 @@ export type AudioWorkflowSummary = {
   deletion: { status: string; recoverable: boolean; message: string } | null;
   capabilities: { can_start_processing: boolean; can_retry_processing: boolean; can_enter_manual_transcript: boolean; can_edit_transcript: boolean; can_assess_quality: boolean; can_approve_transcript: boolean; can_remove_recording: boolean };
 };
-export type StudentTranscript = { id: string; recording_id: string; provenance_label: string; source_status: string; teacher_review_status: ReviewStatus; trusted_context_version: number; segments: Array<TranscriptSegment & { corrected_glossary_term_id: string | null }> };
+export type StudentTranscript = { id: string; recording_id: string; provenance_label: string; source_status: string; trusted_context_version: number; segments: Array<TranscriptSegment & { corrected_glossary_term_id: string | null }> };
 export type Chapter = { id: string; title: string; sequence: number; lessons: Lesson[] };
+export type StudentChapter = Omit<Chapter, "lessons"> & { lessons: StudentLesson[] };
 export type ReviewEvent = { id: string; event_type: string; actor_role: string; note: string | null; created_at: string };
 export type ContextDetail = ContextSummary & { chapters: Chapter[]; completeness: Completeness; review_events: ReviewEvent[] };
 export type SubmitResponse = { context: ContextSummary; completeness: Completeness };
@@ -135,5 +138,5 @@ export type StudentOverview = {
   selected_context_id: string | null;
   version_number: number | null;
   approved_at: string | null;
-  chapters: Chapter[];
+  chapters: StudentChapter[];
 };

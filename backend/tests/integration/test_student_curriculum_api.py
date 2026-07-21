@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -145,8 +146,9 @@ def test_student_filters_unapproved_children_and_prevents_context_and_teacher_le
     ]
     assert lesson["glossary_terms"][0]["malayalam_support_label"] == "പ്രകാശസംശ്ലേഷണം"
     assert lesson["glossary_terms"][1]["malayalam_support_label"] == "ക്ലോറോഫിൽ"
+    assert lesson["glossary_terms"][1]["canonical_term"] == "Chlorophyll"
     assert lesson["glossary_terms"][0]["aliases"]
-    assert lesson["glossary_terms"][1]["misrecognitions"]
+    assert "misrecognitions" not in lesson["glossary_terms"][1]
     assert lesson["glossary_terms"][0]["concept_ids"] == [lesson["concepts"][0]["id"]]
     assert_forbidden_keys_absent(
         data,
@@ -167,3 +169,4 @@ def test_student_filters_unapproved_children_and_prevents_context_and_teacher_le
     assert first_id not in serialized
     assert other_id not in serialized
     assert "Other course marker" not in serialized
+    assert re.search(r"\bchlorophil\b", serialized) is None

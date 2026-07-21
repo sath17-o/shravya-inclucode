@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { AudioWorkflowSummary, Chapter, Completeness, ContextDetail, ContextSummary, Lesson, StudentOverview } from "../api/contracts";
+import type { AudioWorkflowSummary, Chapter, Completeness, ContextDetail, ContextSummary, Lesson, StudentChapter, StudentLesson, StudentOverview } from "../api/contracts";
 import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../demo/config";
 
 export const course = { id: PHOTOSYNTHESIS_DEMO_COURSE_ID, title: "Class 7 Science", subject: "Science", class_level: 7, grade_band: "5-7" };
@@ -55,7 +55,7 @@ function lesson(version: number, approvedTranscript = false): Lesson {
       ...(improved ? [{ id: "question-2-4", related_concept_id: "concept-5", source_type: "teacher_question", source_label: "Improved classroom question", question_text: "Put the five concepts in a learning flow.", malayalam_question_text: "അഞ്ച് ആശയങ്ങളെ പഠന ഒഴുക്കിൽ ക്രമീകരിക്കുക.", sequence: 4, year: null, marks: 3 }] : []),
   ],
   approved_transcript: approvedTranscript ? {
-    id: "transcript-1", recording_id: "recording-1", provenance_label: "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.", source_status: "DEMO", teacher_review_status: "APPROVED", trusted_context_version: version,
+    id: "transcript-1", recording_id: "recording-1", provenance_label: "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.", source_status: "DEMO", trusted_context_version: version,
     segments: [
       { id: "segment-1", sequence: 1, start_ms: 0, end_ms: 7654, text: "സസ്യങ്ങൾക്ക് ജലം, carbon dioxide, sunlight എന്നിവ ആവശ്യമാണ്.", corrected_glossary_term_id: null },
       { id: "segment-2", sequence: 2, start_ms: 7654, end_ms: 12988, text: "ഇലയിലെ Chlorophyll സൂര്യപ്രകാശം പിടിച്ചെടുക്കുന്നു.", corrected_glossary_term_id: "term-2" },
@@ -65,8 +65,16 @@ function lesson(version: number, approvedTranscript = false): Lesson {
 };
 }
 
-export function focusLessonFixture(): Lesson {
-  return lesson(1);
+function studentLesson(version: number, approvedTranscript = false): StudentLesson {
+  const trustedLesson = lesson(version, approvedTranscript);
+  return {
+    ...trustedLesson,
+    glossary_terms: trustedLesson.glossary_terms.map(({ misrecognitions: _misrecognitions, ...term }) => term),
+  };
+}
+
+export function focusLessonFixture(): StudentLesson {
+  return studentLesson(1);
 }
 
 export const complete: Completeness = { context_version_id: v2, is_complete: true, issues: [], completed_sections: ["chapters", "lessons", "learning_objectives", "approved_materials", "glossary", "concepts", "questions", "required_text", "relationships"], incomplete_sections: [] };
@@ -80,10 +88,10 @@ function detail(version: number, status: ContextSummary["teacher_review_status"]
   return { ...summary, chapters: [{ id: `chapter-${version}`, title: "Nutrition in Plants", sequence: 1, lessons: [lesson(version)] }], completeness: { ...complete, context_version_id: summary.id }, review_events: [] };
 }
 
-function overview(version: number, approvedTranscript = false, transformStudentLesson?: (lesson: Lesson) => Lesson): StudentOverview {
+function overview(version: number, approvedTranscript = false, transformStudentLesson?: (lesson: StudentLesson) => StudentLesson): StudentOverview {
   const selected = context(version, "APPROVED");
-  const trustedLesson = lesson(version, approvedTranscript);
-  const chapters: Chapter[] = [{ id: `chapter-${version}`, title: "Nutrition in Plants", sequence: 1, lessons: [transformStudentLesson ? transformStudentLesson(trustedLesson) : trustedLesson] }];
+  const trustedLesson = studentLesson(version, approvedTranscript);
+  const chapters: StudentChapter[] = [{ id: `chapter-${version}`, title: "Nutrition in Plants", sequence: 1, lessons: [transformStudentLesson ? transformStudentLesson(trustedLesson) : trustedLesson] }];
   return { course, is_ready: true, selected_context_id: selected.id, version_number: version, approved_at: selected.approved_at, chapters };
 }
 
@@ -112,7 +120,7 @@ function emptyAudioWorkflow(contextVersionId: string): AudioWorkflowSummary {
 }
 
 export function createCurriculumFetch(
-  options: { notReady?: boolean; fail?: boolean; failSubmitOnce?: boolean; initialV2Status?: ContextSummary["teacher_review_status"]; initialStudentVersion?: 1 | 2; approvedTranscript?: boolean; transformStudentLesson?: (lesson: Lesson) => Lesson; audioWorkflow?: AudioWorkflowSummary | ((contextVersionId: string) => AudioWorkflowSummary) } = {},
+  options: { notReady?: boolean; fail?: boolean; failSubmitOnce?: boolean; initialV2Status?: ContextSummary["teacher_review_status"]; initialStudentVersion?: 1 | 2; approvedTranscript?: boolean; transformStudentLesson?: (lesson: StudentLesson) => StudentLesson; audioWorkflow?: AudioWorkflowSummary | ((contextVersionId: string) => AudioWorkflowSummary) } = {},
 ) {
   let v2Status: ContextSummary["teacher_review_status"] = options.initialV2Status ?? "DRAFT";
   let failSubmitOnce = options.failSubmitOnce ?? false;

@@ -192,12 +192,6 @@ class StudentTermAliasResponse(BaseModel):
     normalized_alias: str
 
 
-class StudentASRMisrecognitionResponse(BaseModel):
-    id: str
-    detected_text: str
-    normalized_text: str
-
-
 class StudentGlossaryTermResponse(BaseModel):
     id: str
     canonical_term: str
@@ -207,7 +201,6 @@ class StudentGlossaryTermResponse(BaseModel):
     sequence: int
     concept_ids: list[str] = Field(default_factory=list)
     aliases: list[StudentTermAliasResponse] = Field(default_factory=list)
-    misrecognitions: list[StudentASRMisrecognitionResponse] = Field(default_factory=list)
 
 
 class StudentConceptRelationshipResponse(BaseModel):
@@ -441,6 +434,5 @@ class StudentTranscriptResponse(BaseModel):
     recording_id: str
     provenance_label: str
     source_status: SourceStatus
-    teacher_review_status: TeacherReviewStatus
     trusted_context_version: int
     segments: list[StudentTranscriptSegmentResponse] = Field(default_factory=list)

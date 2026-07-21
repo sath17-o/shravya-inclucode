@@ -25,6 +25,7 @@ from app.models.foundation import (
     Chapter,
     Concept,
     ConceptGlossaryTermLink,
+    ConceptRecoveryPack,
     ConceptRelationship,
     ContextReviewEvent,
     Course,
@@ -93,6 +94,7 @@ _EXPECTED_CONTEXT_CHILD_COUNTS = {
         "relationships": 4,
         "questions": 3,
         "concept_glossary_term_links": 10,
+        "recovery_packs": 5,
     },
     CONTEXT_V2_ID: {
         "chapters": 1,
@@ -106,6 +108,7 @@ _EXPECTED_CONTEXT_CHILD_COUNTS = {
         "relationships": 4,
         "questions": 4,
         "concept_glossary_term_links": 10,
+        "recovery_packs": 5,
     },
 }
 
@@ -275,8 +278,16 @@ def _has_expected_context_graph(
         "relationships": len(lesson.concept_relationships),
         "questions": len(lesson.questions),
         "concept_glossary_term_links": len(context.concept_glossary_term_links),
+        "recovery_packs": len(context.recovery_packs),
     }
-    return counts == expected_counts
+    expected_pack_status = (
+        TeacherReviewStatus.APPROVED if context.id == CONTEXT_V1_ID else TeacherReviewStatus.DRAFT
+    )
+    return counts == expected_counts and all(
+        pack.teacher_review_status is expected_pack_status
+        and (pack.approved_at is not None) == (expected_pack_status is TeacherReviewStatus.APPROVED)
+        for pack in context.recovery_packs
+    )
 
 
 def _has_expected_events(
@@ -524,6 +535,7 @@ def _add_context(
             Concept(
                 id=concept_id,
                 lesson_id=lesson_id,
+                context_version_id=context_id,
                 concept_key=key,
                 title=title,
                 malayalam_title=malayalam_title,
@@ -532,6 +544,77 @@ def _add_context(
                 sequence=sequence,
             )
         )
+    recovery_text = (
+        (
+            "Notice the words water, carbon dioxide and sunlight.",
+            "ജലം, കാർബൺ ഡൈ ഓക്സൈഡ്, സൂര്യപ്രകാശം എന്നീ വാക്കുകൾ ശ്രദ്ധിക്കുക.",
+            "Think of the leaf collecting what the plant needs.",
+            "ചെടിക്ക് വേണ്ട ഘടകങ്ങൾ ഇലയിൽ ഒന്നിക്കുന്നതായി ചിന്തിക്കുക.",
+            "Plants need water, carbon dioxide and sunlight before making food.",
+            "ഭക്ഷണം നിർമ്മിക്കുന്നതിന് മുമ്പ് സസ്യങ്ങൾക്ക് ജലം, കാർബൺ ഡൈ ഓക്സൈഡ്, സൂര്യപ്രകാശം എന്നിവ വേണം.",
+        ),
+        (
+            "Follow water travelling from the roots and carbon dioxide entering "
+            "through the stomata.",
+            "വേരുകളിൽ നിന്ന് ഇലയിലേക്കെത്തുന്ന ജലവും സ്റ്റോമാറ്റയിലൂടെ ഇലയിലേക്ക് കടക്കുന്ന കാർബൺ ഡൈ ഓക്സൈഡും ശ്രദ്ധിക്കുക.",
+            "Water travels up from roots while carbon dioxide enters through stomata.",
+            "ജലം വേരുകളിൽ നിന്ന് മുകളിലേക്ക് എത്തുന്നു; കാർബൺ ഡൈ ഓക്സൈഡ് സ്റ്റോമാറ്റയിലൂടെ അകത്ത് കടക്കുന്നു.",
+            "Photosynthesis uses the water and carbon dioxide that reach the leaf.",
+            "ഇലയിലെത്തുന്ന ജലവും കാർബൺ ഡൈ ഓക്സൈഡും പ്രകാശസംശ്ലേഷണത്തിൽ ഉപയോഗിക്കുന്നു.",
+        ),
+        (
+            "Notice how chlorophyll and sunlight work together.",
+            "ക്ലോറോഫിലും സൂര്യപ്രകാശവും ഒരുമിച്ച് പ്രവർത്തിക്കുന്നതു ശ്രദ്ധിക്കുക.",
+            "Chlorophyll in the leaf captures energy from sunlight.",
+            "ഇലയിലെ ക്ലോറോഫിൽ സൂര്യപ്രകാശത്തിൽ നിന്നുള്ള ഊർജം പിടിച്ചെടുക്കുന്നു.",
+            "Sunlight provides energy, and chlorophyll in the leaf captures that energy.",
+            "സൂര്യപ്രകാശം ഊർജം നൽകുന്നു; ഇലയിലെ ക്ലോറോഫിൽ ആ ഊർജം പിടിച്ചെടുക്കുന്നു.",
+        ),
+        (
+            "Look for the food made by the plant.",
+            "സസ്യം നിർമ്മിക്കുന്ന ഭക്ഷണം കണ്ടെത്തുക.",
+            "The plant uses water and carbon dioxide to make glucose, a sugar it uses as food.",
+            "സസ്യം ജലവും കാർബൺ ഡൈ ഓക്സൈഡും ഉപയോഗിച്ച് ഗ്ലൂക്കോസ് എന്ന പഞ്ചസാര നിർമ്മിക്കുന്നു; "
+            "അത് സസ്യം ഭക്ഷണമായി ഉപയോഗിക്കുന്നു.",
+            "Glucose is a sugar made during photosynthesis and used by the plant as food.",
+            "പ്രകാശസംശ്ലേഷണത്തിൽ നിർമ്മിക്കുന്ന ഗ്ലൂക്കോസ് സസ്യം ഭക്ഷണമായി ഉപയോഗിക്കുന്ന ഒരു പഞ്ചസാരയാണ്.",
+        ),
+        (
+            "Notice oxygen leaving the leaf during photosynthesis.",
+            "പ്രകാശസംശ്ലേഷണത്തിനിടെ ഇലയിൽ നിന്ന് പുറത്തുവരുന്ന ഓക്സിജൻ ശ്രദ്ധിക്കുക.",
+            "During photosynthesis, the leaf releases oxygen into the air.",
+            "പ്രകാശസംശ്ലേഷണത്തിനിടെ ഇല ഓക്സിജൻ വായുവിലേക്ക് പുറത്തുവിടുന്നു.",
+            "Oxygen is released from the leaf while the plant makes food through photosynthesis.",
+            "പ്രകാശസംശ്ലേഷണത്തിലൂടെ സസ്യം ഭക്ഷണം നിർമ്മിക്കുമ്പോൾ ഇലയിൽ നിന്ന് ഓക്സിജൻ പുറത്തുവിടുന്നു.",
+        ),
+    )
+    session.add_all(
+        [
+            ConceptRecoveryPack(
+                id=_stable_id(f"{label}-recovery-{sequence}"),
+                context_version_id=context_id,
+                concept_id=concept_ids[sequence - 1],
+                cue_en=cue_en,
+                cue_ml=cue_ml,
+                example_en=example_en,
+                example_ml=example_ml,
+                alternate_explanation_en=alternate_en,
+                alternate_explanation_ml=alternate_ml,
+                teacher_review_status=(
+                    TeacherReviewStatus.DRAFT if improved else TeacherReviewStatus.APPROVED
+                ),
+                approved_at=(None if improved else FIXED_APPROVED_AT),
+            )
+            for sequence, (
+                cue_en,
+                cue_ml,
+                example_en,
+                example_ml,
+                alternate_en,
+                alternate_ml,
+            ) in enumerate(recovery_text, 1)
+        ]
+    )
     concept_glossary_terms = {
         "plant-inputs": ("Carbon dioxide", "Water", "Sunlight"),
         "inputs-reach-leaf": ("Carbon dioxide", "Water", "Leaf"),

@@ -80,6 +80,8 @@ export type Concept = {
   malayalam_definition: string | null;
   sequence: number;
 };
+export type RecoveryPack = { id: string; context_version_id: string; concept_id: string; cue_en: string; cue_ml: string; example_en: string; example_ml: string; alternate_explanation_en: string; alternate_explanation_ml: string; teacher_review_status: ReviewStatus; approved_at: string | null };
+export type StudentRecoverySupport = { concept_id: string; cue: { english: string; malayalam: string }; example: { english: string; malayalam: string }; alternate_explanation: { english: string; malayalam: string } };
 export type Question = {
   id: string;
   related_concept_id: string | null;
@@ -102,11 +104,12 @@ export type Lesson = {
   approved_materials: ApprovedMaterial[];
   glossary_terms: GlossaryTerm[];
   concepts: Concept[];
+  recovery_packs?: RecoveryPack[];
   concept_relationships: { id: string; source_concept_id: string; target_concept_id: string; relationship_type: string; sequence: number }[];
   questions: Question[];
   approved_transcript: StudentTranscript | null;
 };
-export type StudentLesson = Omit<Lesson, "glossary_terms"> & { glossary_terms: StudentGlossaryTerm[] };
+export type StudentLesson = Omit<Lesson, "glossary_terms" | "recovery_packs"> & { glossary_terms: StudentGlossaryTerm[]; recovery_support: StudentRecoverySupport[] };
 export type Recording = { id: string; lesson_id: string; original_filename: string; mime_type: string; byte_size: number; sha256: string; duration_ms: number; source_status: string; workflow_status: string };
 export type RecordingRemoval = { recording_id: string; removed: boolean };
 export type ProcessingJob = { id: string; status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED"; stage: string; recoverable: boolean | null; recording_id: string; resulting_transcript_revision_id: string | null; error_code: string | null };

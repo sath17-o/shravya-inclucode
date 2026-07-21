@@ -7,6 +7,7 @@ from app.contracts.enums import ArtifactStatus, TeacherReviewStatus
 from app.models.foundation import (
     Chapter,
     ConceptGlossaryTermLink,
+    ConceptRecoveryPack,
     ContextReviewEvent,
     Course,
     CourseContextVersion,
@@ -60,6 +61,9 @@ class CurriculumRepository:
             .options(
                 lesson_options,
                 selectinload(CourseContextVersion.concept_glossary_term_links),
+                selectinload(CourseContextVersion.recovery_packs).selectinload(
+                    ConceptRecoveryPack.concept
+                ),
             )
         )
         return self._session.scalar(statement)

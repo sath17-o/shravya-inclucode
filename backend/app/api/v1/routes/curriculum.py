@@ -91,6 +91,17 @@ def lesson(lesson_model):
             ConceptResponse.model_validate(x, from_attributes=True)
             for x in sorted(lesson_model.concepts, key=lambda x: (x.sequence, x.id))
         ],
+        recovery_packs=[
+            RecoveryPackResponse.model_validate(x, from_attributes=True)
+            for x in sorted(
+                (
+                    pack
+                    for pack in lesson_model.chapter.context_version.recovery_packs
+                    if pack.concept_id in {concept.id for concept in lesson_model.concepts}
+                ),
+                key=lambda x: (x.concept.sequence, x.id),
+            )
+        ],
         concept_relationships=[
             ConceptRelationshipResponse.model_validate(x, from_attributes=True)
             for x in sorted(lesson_model.concept_relationships, key=lambda x: (x.sequence, x.id))
@@ -156,6 +167,22 @@ def student_lesson(projection):
         questions=[
             StudentQuestionResponse.model_validate(item, from_attributes=True)
             for item in projection.questions
+        ],
+        recovery_support=[
+            StudentRecoverySupportResponse(
+                concept_id=item.concept_id,
+                cue=StudentBilingualRecoveryTextResponse(
+                    english=item.cue.english, malayalam=item.cue.malayalam
+                ),
+                example=StudentBilingualRecoveryTextResponse(
+                    english=item.example.english, malayalam=item.example.malayalam
+                ),
+                alternate_explanation=StudentBilingualRecoveryTextResponse(
+                    english=item.alternate_explanation.english,
+                    malayalam=item.alternate_explanation.malayalam,
+                ),
+            )
+            for item in projection.recovery_support
         ],
         approved_transcript=(
             StudentTranscriptResponse(
@@ -495,6 +522,21 @@ def approve(context_id: str, svc: Annotated[TeacherReviewService, Depends(get_re
         data=ApprovalResponse(
             context=summary(result.context),
             newly_staled_artifact_count=result.newly_staled_artifact_count,
+        )
+    )
+
+
+@router.post(
+    "/teacher/recovery-packs/{recovery_pack_id}/approve",
+    response_model=SuccessResponse[RecoveryPackResponse],
+    operation_id="approve_recovery_pack",
+)
+def approve_recovery_pack(
+    recovery_pack_id: str, svc: Annotated[TeacherReviewService, Depends(get_review)]
+):
+    return SuccessResponse(
+        data=RecoveryPackResponse.model_validate(
+            svc.approve_recovery_pack(recovery_pack_id), from_attributes=True
         )
     )
 

@@ -11,6 +11,7 @@ from app.models.foundation import (
     Chapter,
     Concept,
     ConceptGlossaryTermLink,
+    ConceptRecoveryPack,
     ConceptRelationship,
     ContextReviewEvent,
     CourseContextVersion,
@@ -59,9 +60,10 @@ class ContextVersioningService:
             raise
         try:
             lesson_ids = self._copy_chapters(source, copy)
-            concept_ids, glossary_ids = self._copy_lesson_children(source, lesson_ids)
+            concept_ids, glossary_ids = self._copy_lesson_children(source, copy, lesson_ids)
             self._copy_relationships_and_questions(source, lesson_ids, concept_ids)
             self._copy_concept_glossary_term_links(source, copy, concept_ids, glossary_ids)
+            self._copy_recovery_packs(source, copy, concept_ids)
             event_note = (
                 f"copied_from:{source.id}" if note is None else f"copied_from:{source.id}; {note}"
             )
@@ -167,7 +169,10 @@ class ContextVersioningService:
         return lesson_ids
 
     def _copy_lesson_children(
-        self, source: CourseContextVersion, lesson_ids: dict[str, str]
+        self,
+        source: CourseContextVersion,
+        copy: CourseContextVersion,
+        lesson_ids: dict[str, str],
     ) -> tuple[dict[str, str], dict[str, str]]:
         concept_ids: dict[str, str] = {}
         glossary_ids: dict[str, str] = {}
@@ -229,6 +234,7 @@ class ContextVersioningService:
                 for concept in lesson.concepts:
                     new_concept = Concept(
                         lesson_id=new_lesson_id,
+                        context_version_id=copy.id,
                         concept_key=concept.concept_key,
                         title=concept.title,
                         malayalam_title=concept.malayalam_title,
@@ -258,6 +264,25 @@ class ContextVersioningService:
                     concept_id=concept_ids[link.concept_id],
                     glossary_term_id=glossary_ids[link.glossary_term_id],
                     sequence=link.sequence,
+                )
+            )
+
+    def _copy_recovery_packs(
+        self, source: CourseContextVersion, copy: CourseContextVersion, concept_ids: dict[str, str]
+    ) -> None:
+        for pack in source.recovery_packs:
+            self._session.add(
+                ConceptRecoveryPack(
+                    context_version_id=copy.id,
+                    concept_id=concept_ids[pack.concept_id],
+                    cue_en=pack.cue_en,
+                    cue_ml=pack.cue_ml,
+                    example_en=pack.example_en,
+                    example_ml=pack.example_ml,
+                    alternate_explanation_en=pack.alternate_explanation_en,
+                    alternate_explanation_ml=pack.alternate_explanation_ml,
+                    teacher_review_status=TeacherReviewStatus.DRAFT,
+                    approved_at=None,
                 )
             )
 

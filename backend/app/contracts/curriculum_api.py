@@ -77,6 +77,20 @@ class ConceptResponse(BaseModel):
     sequence: int
 
 
+class RecoveryPackResponse(BaseModel):
+    id: str
+    context_version_id: str
+    concept_id: str
+    cue_en: str
+    cue_ml: str
+    example_en: str
+    example_ml: str
+    alternate_explanation_en: str
+    alternate_explanation_ml: str
+    teacher_review_status: TeacherReviewStatus
+    approved_at: datetime | None
+
+
 class ConceptRelationshipResponse(BaseModel):
     id: str
     source_concept_id: str
@@ -109,6 +123,7 @@ class LessonResponse(BaseModel):
     approved_materials: list[ApprovedMaterialResponse] = Field(default_factory=list)
     glossary_terms: list[GlossaryTermResponse] = Field(default_factory=list)
     concepts: list[ConceptResponse] = Field(default_factory=list)
+    recovery_packs: list[RecoveryPackResponse] = Field(default_factory=list)
     concept_relationships: list[ConceptRelationshipResponse] = Field(default_factory=list)
     questions: list[QuestionResponse] = Field(default_factory=list)
 
@@ -223,6 +238,18 @@ class StudentQuestionResponse(BaseModel):
     marks: int | None
 
 
+class StudentBilingualRecoveryTextResponse(BaseModel):
+    english: str
+    malayalam: str
+
+
+class StudentRecoverySupportResponse(BaseModel):
+    concept_id: str
+    cue: StudentBilingualRecoveryTextResponse
+    example: StudentBilingualRecoveryTextResponse
+    alternate_explanation: StudentBilingualRecoveryTextResponse
+
+
 class StudentLessonResponse(BaseModel):
     id: str
     title: str
@@ -235,6 +262,7 @@ class StudentLessonResponse(BaseModel):
     concepts: list[ConceptResponse] = Field(default_factory=list)
     concept_relationships: list[StudentConceptRelationshipResponse] = Field(default_factory=list)
     questions: list[StudentQuestionResponse] = Field(default_factory=list)
+    recovery_support: list[StudentRecoverySupportResponse] = Field(default_factory=list)
     approved_transcript: "StudentTranscriptResponse | None" = None
 
 

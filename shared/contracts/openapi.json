@@ -1039,6 +1039,13 @@
             "title": "Questions",
             "type": "array"
           },
+          "recovery_packs": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryPackResponse"
+            },
+            "title": "Recovery Packs",
+            "type": "array"
+          },
           "sequence": {
             "title": "Sequence",
             "type": "integer"
@@ -1356,6 +1363,76 @@
         "title": "RecordingWorkflowStatus",
         "type": "string"
       },
+      "RecoveryPackResponse": {
+        "properties": {
+          "alternate_explanation_en": {
+            "title": "Alternate Explanation En",
+            "type": "string"
+          },
+          "alternate_explanation_ml": {
+            "title": "Alternate Explanation Ml",
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "string"
+          },
+          "context_version_id": {
+            "title": "Context Version Id",
+            "type": "string"
+          },
+          "cue_en": {
+            "title": "Cue En",
+            "type": "string"
+          },
+          "cue_ml": {
+            "title": "Cue Ml",
+            "type": "string"
+          },
+          "example_en": {
+            "title": "Example En",
+            "type": "string"
+          },
+          "example_ml": {
+            "title": "Example Ml",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "teacher_review_status": {
+            "$ref": "#/components/schemas/TeacherReviewStatus"
+          }
+        },
+        "required": [
+          "id",
+          "context_version_id",
+          "concept_id",
+          "cue_en",
+          "cue_ml",
+          "example_en",
+          "example_ml",
+          "alternate_explanation_en",
+          "alternate_explanation_ml",
+          "teacher_review_status",
+          "approved_at"
+        ],
+        "title": "RecoveryPackResponse",
+        "type": "object"
+      },
       "ReviewEventResponse": {
         "properties": {
           "actor_role": {
@@ -1464,6 +1541,24 @@
           "sequence"
         ],
         "title": "StudentApprovedMaterialResponse",
+        "type": "object"
+      },
+      "StudentBilingualRecoveryTextResponse": {
+        "properties": {
+          "english": {
+            "title": "English",
+            "type": "string"
+          },
+          "malayalam": {
+            "title": "Malayalam",
+            "type": "string"
+          }
+        },
+        "required": [
+          "english",
+          "malayalam"
+        ],
+        "title": "StudentBilingualRecoveryTextResponse",
         "type": "object"
       },
       "StudentChapterResponse": {
@@ -1726,6 +1821,13 @@
             "title": "Questions",
             "type": "array"
           },
+          "recovery_support": {
+            "items": {
+              "$ref": "#/components/schemas/StudentRecoverySupportResponse"
+            },
+            "title": "Recovery Support",
+            "type": "array"
+          },
           "sequence": {
             "title": "Sequence",
             "type": "integer"
@@ -1824,6 +1926,31 @@
           "marks"
         ],
         "title": "StudentQuestionResponse",
+        "type": "object"
+      },
+      "StudentRecoverySupportResponse": {
+        "properties": {
+          "alternate_explanation": {
+            "$ref": "#/components/schemas/StudentBilingualRecoveryTextResponse"
+          },
+          "concept_id": {
+            "title": "Concept Id",
+            "type": "string"
+          },
+          "cue": {
+            "$ref": "#/components/schemas/StudentBilingualRecoveryTextResponse"
+          },
+          "example": {
+            "$ref": "#/components/schemas/StudentBilingualRecoveryTextResponse"
+          }
+        },
+        "required": [
+          "concept_id",
+          "cue",
+          "example",
+          "alternate_explanation"
+        ],
+        "title": "StudentRecoverySupportResponse",
         "type": "object"
       },
       "StudentTermAliasResponse": {
@@ -2108,6 +2235,24 @@
           "data"
         ],
         "title": "SuccessResponse[RecordingResponse]",
+        "type": "object"
+      },
+      "SuccessResponse_RecoveryPackResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RecoveryPackResponse"
+          },
+          "status": {
+            "const": "success",
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[RecoveryPackResponse]",
         "type": "object"
       },
       "SuccessResponse_StudentLessonOverviewResponse_": {
@@ -4060,6 +4205,88 @@
           }
         },
         "summary": "Request Transcription",
+        "tags": [
+          "curriculum"
+        ]
+      }
+    },
+    "/api/v1/teacher/recovery-packs/{recovery_pack_id}/approve": {
+      "post": {
+        "operationId": "approve_recovery_pack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recovery_pack_id",
+            "required": true,
+            "schema": {
+              "title": "Recovery Pack Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_RecoveryPackResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested action is not permitted."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested curriculum record was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum context is in a conflicting state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum request could not be completed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "summary": "Approve Recovery Pack",
         "tags": [
           "curriculum"
         ]

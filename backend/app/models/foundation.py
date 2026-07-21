@@ -10,13 +10,17 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    and_,
+    event,
+    select,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from app.contracts.enums import (
     ArtifactStatus,
@@ -148,6 +152,9 @@ class CourseContextVersion(IdTimestampMixin, Base):
         back_populates="course_context_version", cascade="all, delete-orphan", passive_deletes=True
     )
     concept_glossary_term_links: Mapped[list[ConceptGlossaryTermLink]] = relationship(
+        back_populates="context_version", cascade="all, delete-orphan", passive_deletes=True
+    )
+    recovery_packs: Mapped[list[ConceptRecoveryPack]] = relationship(
         back_populates="context_version", cascade="all, delete-orphan", passive_deletes=True
     )
 
@@ -631,6 +638,7 @@ class LegacyProcessingJobArchive(IdTimestampMixin, Base):
 class Concept(IdTimestampMixin, Base):
     __tablename__ = "concepts"
     __table_args__ = (
+        Index("uq_concepts_context_id", "context_version_id", "id", unique=True),
         UniqueConstraint("lesson_id", "sequence", name="uq_concept_lesson_sequence"),
         UniqueConstraint("lesson_id", "concept_key", name="uq_concept_lesson_key"),
         CheckConstraint("sequence >= 1", name="ck_concepts_sequence"),
@@ -639,6 +647,7 @@ class Concept(IdTimestampMixin, Base):
     lesson_id: Mapped[str] = mapped_column(
         ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
     )
+    context_version_id: Mapped[str] = mapped_column(String(36), nullable=False, server_default="")
     title: Mapped[str] = mapped_column(String(250), nullable=False)
     concept_key: Mapped[str] = mapped_column(String(100), nullable=False)
     malayalam_title: Mapped[str | None] = mapped_column(String(250))
@@ -657,6 +666,16 @@ class Concept(IdTimestampMixin, Base):
     )
     glossary_links: Mapped[list[ConceptGlossaryTermLink]] = relationship(
         back_populates="concept", cascade="all, delete-orphan", passive_deletes=True
+    )
+    recovery_packs: Mapped[list[ConceptRecoveryPack]] = relationship(
+        back_populates="concept",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        primaryjoin=lambda: and_(
+            Concept.context_version_id == ConceptRecoveryPack.context_version_id,
+            Concept.id == foreign(ConceptRecoveryPack.concept_id),
+        ),
+        foreign_keys=lambda: (ConceptRecoveryPack.concept_id,),
     )
 
 
@@ -701,6 +720,76 @@ class ConceptGlossaryTermLink(IdTimestampMixin, Base):
     )
     concept: Mapped[Concept] = relationship(back_populates="glossary_links")
     glossary_term: Mapped[GlossaryTerm] = relationship(back_populates="concept_links")
+
+
+class ConceptRecoveryPack(IdTimestampMixin, Base):
+    """Teacher-verified, version-scoped recovery content for one lesson concept."""
+
+    __tablename__ = "concept_recovery_packs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["context_version_id"],
+            ["course_context_versions.id"],
+            name="fk_recovery_pack_context_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["context_version_id", "concept_id"],
+            ["concepts.context_version_id", "concepts.id"],
+            name="fk_recovery_pack_context_concept",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "context_version_id", "concept_id", name="uq_recovery_pack_context_concept"
+        ),
+        CheckConstraint("length(trim(cue_en)) > 0", name="ck_recovery_pack_cue_en"),
+        CheckConstraint("length(trim(cue_ml)) > 0", name="ck_recovery_pack_cue_ml"),
+        CheckConstraint("length(trim(example_en)) > 0", name="ck_recovery_pack_example_en"),
+        CheckConstraint("length(trim(example_ml)) > 0", name="ck_recovery_pack_example_ml"),
+        CheckConstraint(
+            "length(trim(alternate_explanation_en)) > 0", name="ck_recovery_pack_alternate_en"
+        ),
+        CheckConstraint(
+            "length(trim(alternate_explanation_ml)) > 0", name="ck_recovery_pack_alternate_ml"
+        ),
+        Index("ix_recovery_pack_context_status", "context_version_id", "teacher_review_status"),
+    )
+
+    context_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    concept_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    cue_en: Mapped[str] = mapped_column(Text, nullable=False)
+    cue_ml: Mapped[str] = mapped_column(Text, nullable=False)
+    example_en: Mapped[str] = mapped_column(Text, nullable=False)
+    example_ml: Mapped[str] = mapped_column(Text, nullable=False)
+    alternate_explanation_en: Mapped[str] = mapped_column(Text, nullable=False)
+    alternate_explanation_ml: Mapped[str] = mapped_column(Text, nullable=False)
+    teacher_review_status: Mapped[TeacherReviewStatus] = mapped_column(
+        sqlite_enum(TeacherReviewStatus, "recovery_pack_teacher_review_status", 20),
+        default=TeacherReviewStatus.DRAFT,
+        nullable=False,
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    context_version: Mapped[CourseContextVersion] = relationship(back_populates="recovery_packs")
+    concept: Mapped[Concept] = relationship(
+        back_populates="recovery_packs",
+        primaryjoin=lambda: and_(
+            ConceptRecoveryPack.context_version_id == Concept.context_version_id,
+            foreign(ConceptRecoveryPack.concept_id) == Concept.id,
+        ),
+        foreign_keys=lambda: (ConceptRecoveryPack.concept_id,),
+    )
+
+
+@event.listens_for(Concept, "before_insert")
+def _set_concept_context_version(_mapper, connection, target: Concept) -> None:
+    """Persist the context derived from the concept's lesson for ORM-created concepts."""
+    if target.context_version_id:
+        return
+    target.context_version_id = connection.execute(
+        select(Chapter.context_version_id)
+        .join(Lesson, Lesson.chapter_id == Chapter.id)
+        .where(Lesson.id == target.lesson_id)
+    ).scalar_one()
 
 
 class ConceptEvidence(IdTimestampMixin, Base):

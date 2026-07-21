@@ -318,6 +318,247 @@ def test_migrated_schema_matches_metadata_and_persists_concept_state_values(tmp_
         assert compare_metadata(migration_context, Base.metadata) == []
     engine.dispose()
 
+
+def test_phase_4b2a_recovery_pack_migration_enforces_context_owned_concepts(tmp_path) -> None:
+    database_path = tmp_path / "recovery-packs.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "20260717_0003")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys = ON"))
+        connection.execute(
+            text(
+                "INSERT INTO courses (id, created_at, updated_at, title, subject, class_level, grade_band) "
+                "VALUES ('course-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Science', 'Science', 7, '5-7')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO course_context_versions (id, created_at, updated_at, course_id, version_number, teacher_review_status) "
+                "VALUES ('context-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'course-1', 1, 'APPROVED'), "
+                "('context-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'course-1', 2, 'DRAFT')"
+            )
+        )
+        for context_id, chapter_id, lesson_id, concept_id in (
+            ("context-1", "chapter-1", "lesson-1", "concept-1"),
+            ("context-2", "chapter-2", "lesson-2", "concept-2"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO chapters (id, created_at, updated_at, context_version_id, title, sequence) "
+                    "VALUES (:chapter_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :context_id, 'Plants', 1)"
+                ),
+                {"chapter_id": chapter_id, "context_id": context_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO lessons (id, created_at, updated_at, chapter_id, title, sequence, primary_language) "
+                    "VALUES (:lesson_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :chapter_id, 'Photosynthesis', 1, 'ml')"
+                ),
+                {"lesson_id": lesson_id, "chapter_id": chapter_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO concepts (id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                    "VALUES (:concept_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :lesson_id, :concept_id, 'Concept', 'Definition', 1)"
+                ),
+                {"concept_id": concept_id, "lesson_id": lesson_id},
+            )
+
+    command.upgrade(config, "20260721_0004")
+
+    ownership_trigger_names = {
+        "trg_concepts_context_version_insert",
+        "trg_concepts_context_version_update",
+        "trg_lessons_concept_context_version_update",
+        "trg_chapters_concept_context_version_update",
+    }
+
+    def current_ownership_trigger_names(connection) -> set[str]:
+        return set(
+            connection.scalars(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type = 'trigger' "
+                    "AND name IN ("
+                    "'trg_concepts_context_version_insert', "
+                    "'trg_concepts_context_version_update', "
+                    "'trg_lessons_concept_context_version_update', "
+                    "'trg_chapters_concept_context_version_update'"
+                    ")"
+                )
+            )
+        )
+
+    def insert_pack(connection, pack_id: str, context_id: str, concept_id: str) -> None:
+        connection.execute(
+            text(
+                "INSERT INTO concept_recovery_packs "
+                "(id, created_at, updated_at, context_version_id, concept_id, cue_en, cue_ml, "
+                "example_en, example_ml, alternate_explanation_en, alternate_explanation_ml, teacher_review_status) "
+                "VALUES (:pack_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :context_id, :concept_id, "
+                "'Cue', 'സൂചന', 'Example', 'ഉദാഹരണം', 'Alternate', 'മറ്റൊരു വിശദീകരണം', 'DRAFT')"
+            ),
+            {"pack_id": pack_id, "context_id": context_id, "concept_id": concept_id},
+        )
+
+    with engine.connect() as connection:
+        assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+        assert current_ownership_trigger_names(connection) == ownership_trigger_names
+        assert (
+            connection.execute(
+                text("SELECT context_version_id FROM concepts WHERE id = 'concept-1'")
+            ).scalar_one()
+            == "context-1"
+        )
+        connection.execute(
+            text(
+                "INSERT INTO concepts "
+                "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
+                "VALUES ('concept-valid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+                "'context-1', 'concept-valid', 'Valid concept', 'Definition', 2)"
+            )
+        )
+        connection.commit()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "INSERT INTO concepts "
+                    "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
+                    "VALUES ('concept-invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
+                    "'context-2', 'concept-invalid', 'Invalid concept', 'Definition', 3)"
+                )
+            )
+        connection.rollback()
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM concepts WHERE id = 'concept-invalid'")
+            ).scalar_one()
+            == 0
+        )
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "UPDATE concepts SET context_version_id = 'context-2' WHERE id = 'concept-valid'"
+                )
+            )
+        connection.rollback()
+        assert (
+            connection.execute(
+                text("SELECT context_version_id FROM concepts WHERE id = 'concept-valid'")
+            ).scalar_one()
+            == "context-1"
+        )
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text("UPDATE lessons SET chapter_id = 'chapter-2' WHERE id = 'lesson-1'")
+            )
+        connection.rollback()
+        assert (
+            connection.execute(
+                text("SELECT chapter_id FROM lessons WHERE id = 'lesson-1'")
+            ).scalar_one()
+            == "chapter-1"
+        )
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text("UPDATE chapters SET context_version_id = 'context-2' WHERE id = 'chapter-1'")
+            )
+        connection.rollback()
+        assert (
+            connection.execute(
+                text("SELECT context_version_id FROM chapters WHERE id = 'chapter-1'")
+            ).scalar_one()
+            == "context-1"
+        )
+        connection.execute(
+            text("UPDATE concepts SET title = 'Refined concept' WHERE id = 'concept-valid'")
+        )
+        connection.commit()
+        assert (
+            connection.execute(
+                text("SELECT title FROM concepts WHERE id = 'concept-valid'")
+            ).scalar_one()
+            == "Refined concept"
+        )
+        insert_pack(connection, "pack-1", "context-1", "concept-1")
+        insert_pack(connection, "pack-2", "context-2", "concept-2")
+        connection.commit()
+        for pack_id, context_id, concept_id in (
+            ("pack-duplicate", "context-1", "concept-1"),
+            ("pack-cross-1", "context-1", "concept-2"),
+            ("pack-cross-2", "context-2", "concept-1"),
+        ):
+            with pytest.raises(IntegrityError):
+                insert_pack(connection, pack_id, context_id, concept_id)
+            connection.rollback()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "UPDATE concept_recovery_packs SET concept_id = 'concept-2' WHERE id = 'pack-1'"
+                )
+            )
+        connection.rollback()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "UPDATE concept_recovery_packs SET context_version_id = 'context-2' "
+                    "WHERE id = 'pack-1'"
+                )
+            )
+        connection.rollback()
+        connection.execute(text("DELETE FROM concepts WHERE id = 'concept-1'"))
+        connection.commit()
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM concept_recovery_packs WHERE id = 'pack-1'")
+            ).scalar_one()
+            == 0
+        )
+    command.downgrade(config, "20260717_0003")
+    with engine.connect() as connection:
+        assert current_ownership_trigger_names(connection) == set()
+    command.upgrade(config, "20260721_0004")
+    with engine.connect() as connection:
+        connection.execute(text("PRAGMA foreign_keys = ON"))
+        assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+        assert current_ownership_trigger_names(connection) == ownership_trigger_names
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    "INSERT INTO concepts "
+                    "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
+                    "VALUES ('concept-invalid-reupgrade', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-2', "
+                    "'context-1', 'concept-invalid-reupgrade', 'Invalid concept', 'Definition', 2)"
+                )
+            )
+        connection.rollback()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text("UPDATE concepts SET context_version_id = 'context-1' WHERE id = 'concept-2'")
+            )
+        connection.rollback()
+        assert (
+            connection.execute(
+                text("SELECT context_version_id FROM concepts WHERE id = 'concept-2'")
+            ).scalar_one()
+            == "context-2"
+        )
+        with pytest.raises(IntegrityError):
+            insert_pack(connection, "pack-cross-reupgrade", "context-1", "concept-2")
+        connection.rollback()
+        insert_pack(connection, "pack-cascade", "context-2", "concept-2")
+        connection.commit()
+        connection.execute(text("DELETE FROM course_context_versions WHERE id = 'context-2'"))
+        connection.commit()
+        assert (
+            connection.execute(
+                text("SELECT COUNT(*) FROM concept_recovery_packs WHERE id = 'pack-cascade'")
+            ).scalar_one()
+            == 0
+        )
+    engine.dispose()
+
     with Session(engine) as session:
         course = Course(title="Science", subject="Science", class_level=7, grade_band="5-7")
         session.add(course)
@@ -403,9 +644,9 @@ def test_phase_2a_database_constraints_and_delete_actions(tmp_path) -> None:
         connection.execute(
             text(
                 "INSERT INTO concepts "
-                "(id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
                 "VALUES ('concept-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
-                "'plant-inputs', 'Plant inputs', 'Plants need inputs.', 1)"
+                "'context-2', 'plant-inputs', 'Plant inputs', 'Plants need inputs.', 1)"
             )
         )
         connection.execute(
@@ -842,9 +1083,9 @@ def test_concept_glossary_term_link_schema_enforces_context_and_cascades(tmp_pat
         connection.execute(
             text(
                 "INSERT INTO concepts "
-                "(id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
                 "VALUES ('concept-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-1', "
-                "'plant-inputs', 'Plant inputs', 'Plants need inputs.', 1)"
+                "'context-1', 'plant-inputs', 'Plant inputs', 'Plants need inputs.', 1)"
             )
         )
         connection.execute(
@@ -885,9 +1126,9 @@ def test_concept_glossary_term_link_schema_enforces_context_and_cascades(tmp_pat
         connection.execute(
             text(
                 "INSERT INTO concepts "
-                "(id, created_at, updated_at, lesson_id, concept_key, title, definition, sequence) "
+                "(id, created_at, updated_at, lesson_id, context_version_id, concept_key, title, definition, sequence) "
                 "VALUES ('concept-2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'lesson-2', "
-                "'oxygen', 'Oxygen', 'Oxygen is released.', 1)"
+                "'context-2', 'oxygen', 'Oxygen', 'Oxygen is released.', 1)"
             )
         )
 

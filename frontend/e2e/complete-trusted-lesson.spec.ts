@@ -2,6 +2,9 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
+import { realBackendApiBaseUrl } from "../scripts/playwright-real-backend";
+import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../src/demo/config";
+
 const spokenFixturePath = fileURLToPath(new URL("../../backend/app/demo/assets/photosynthesis-demo.wav", import.meta.url));
 
 test.describe.serial("complete trusted lesson judge journey", () => {
@@ -22,6 +25,10 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     const navigation = page.getByRole("navigation", { name: "Primary" });
     await expect(navigation.getByRole("link", { name: "Teacher review" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: "Teacher" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("heading", { name: "Recovery support for this lesson" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve recovery pack" })).toHaveCount(5);
+    await page.getByRole("button", { name: "Approve recovery pack" }).first().click();
+    await expect(page.getByRole("button", { name: "Recovery pack approved" })).toHaveCount(1);
 
     const audioWorkflow = page.locator(".audio-workflow");
     const workflow = page.getByRole("region", { name: "Recording workflow" });
@@ -95,6 +102,9 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await page.getByRole("button", { name: "Approve trusted version" }).click();
     await expect(page.getByText("New trusted version approved.", { exact: false })).toBeVisible();
     await expect(page.getByRole("button", { name: /Version 2/ })).toContainText("Currently visible to students");
+    const projection = await page.request.get(`${realBackendApiBaseUrl}/student/courses/${PHOTOSYNTHESIS_DEMO_COURSE_ID}/lesson-overview`);
+    expect(projection.status()).toBe(200);
+    expect((await projection.json()).data.chapters[0].lessons[0].recovery_support).toEqual([]);
 
     await page.getByRole("button", { name: "Student", exact: true }).click();
     await expect(navigation.getByRole("link", { name: "Student lesson" })).toHaveAttribute("aria-current", "page");

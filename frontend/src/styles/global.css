@@ -169,6 +169,13 @@ p { max-inline-size: 75ch; }
 .focus-preview-steps li::marker { color: #24584d; font-weight: 850; }
 .focus-preview-steps li > span { color: #1d4e42; font-size: 0.9rem; font-weight: 850; text-transform: uppercase; letter-spacing: 0.04em; }
 .focus-secondary-action { color: #214a40; background: #fff; border-color: #4f866f; }
+.recovery-pack-list { display: grid; gap: 1rem; }
+.recovery-pack-card { display: grid; gap: 0.75rem; padding: 1rem; background: #fff; border: 1px solid #b8d0c1; border-radius: 0.75rem; }
+.recovery-pack-card h3, .recovery-pack-card p { margin: 0; }
+.recovery-pack-card dl { display: grid; gap: 0.75rem; margin: 0; }
+.recovery-pack-card dl > div { display: grid; gap: 0.2rem; }
+.recovery-pack-card dt { color: #214a40; font-weight: 850; }
+.recovery-pack-card dd { margin: 0; }
 
 @media (max-width: 52rem) {
   .site-header { padding-top: 1.25rem; }

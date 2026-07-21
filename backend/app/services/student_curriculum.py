@@ -119,6 +119,20 @@ class StudentTranscriptProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class StudentRecoveryTextProjection:
+    english: str
+    malayalam: str
+
+
+@dataclass(frozen=True, slots=True)
+class StudentRecoverySupportProjection:
+    concept_id: str
+    cue: StudentRecoveryTextProjection
+    example: StudentRecoveryTextProjection
+    alternate_explanation: StudentRecoveryTextProjection
+
+
+@dataclass(frozen=True, slots=True)
 class StudentLessonProjection:
     id: str
     title: str
@@ -132,6 +146,7 @@ class StudentLessonProjection:
     concept_relationships: tuple[StudentRelationshipProjection, ...]
     questions: tuple[StudentQuestionProjection, ...]
     approved_transcript: StudentTranscriptProjection | None
+    recovery_support: tuple[StudentRecoverySupportProjection, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +337,46 @@ class StudentCurriculumService:
             approved_transcript=StudentCurriculumService._approved_transcript(
                 lesson, context.version_number
             ),
+            recovery_support=StudentCurriculumService._recovery_support(lesson, context),
+        )
+
+    @staticmethod
+    def _recovery_support(lesson: Lesson, context) -> tuple[StudentRecoverySupportProjection, ...]:
+        concepts = sorted(lesson.concepts, key=lambda item: (item.sequence, item.id))
+        concept_ids = {concept.id for concept in concepts}
+        by_concept = {pack.concept_id: pack for pack in context.recovery_packs}
+        # Packs are projected only as a complete, approved set for the selected context.
+        if set(by_concept) != concept_ids:
+            return ()
+        ordered = [by_concept[concept.id] for concept in concepts]
+        if any(
+            pack.context_version_id != context.id
+            or pack.teacher_review_status is not TeacherReviewStatus.APPROVED
+            or pack.approved_at is None
+            or not all(
+                value.strip()
+                for value in (
+                    pack.cue_en,
+                    pack.cue_ml,
+                    pack.example_en,
+                    pack.example_ml,
+                    pack.alternate_explanation_en,
+                    pack.alternate_explanation_ml,
+                )
+            )
+            for pack in ordered
+        ):
+            return ()
+        return tuple(
+            StudentRecoverySupportProjection(
+                concept_id=pack.concept_id,
+                cue=StudentRecoveryTextProjection(pack.cue_en, pack.cue_ml),
+                example=StudentRecoveryTextProjection(pack.example_en, pack.example_ml),
+                alternate_explanation=StudentRecoveryTextProjection(
+                    pack.alternate_explanation_en, pack.alternate_explanation_ml
+                ),
+            )
+            for pack in ordered
         )
 
     @staticmethod

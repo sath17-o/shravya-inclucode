@@ -13,6 +13,7 @@ import type {
   ProcessingJob,
   TranscriptSegmentInput,
   TranscriptRevision,
+  RecoveryPack,
   AudioWorkflowSummary,
 } from "./contracts";
 
@@ -53,6 +54,7 @@ export const curriculumApi = {
   audioWorkflow: (contextId: string, signal?: AbortSignal) => request<AudioWorkflowSummary>(`/curriculum/context-versions/${contextId}/audio-workflow`, { signal }),
   submit: (contextId: string) => request<SubmitResponse>(`/teacher/contexts/${contextId}/submit-for-review`, { method: "POST" }),
   approve: (contextId: string) => request<ApprovalResponse>(`/teacher/contexts/${contextId}/approve`, { method: "POST" }),
+  approveRecoveryPack: (recoveryPackId: string) => request<RecoveryPack>(`/teacher/recovery-packs/${recoveryPackId}/approve`, { method: "POST" }),
   studentOverview: (courseId: string, signal?: AbortSignal) => request<StudentOverview>(`/student/courses/${courseId}/lesson-overview`, { signal }),
   uploadRecording: (lessonId: string, file: File) => request<Recording>(`/teacher/lessons/${lessonId}/recordings`, { method: "POST", headers: { "Content-Type": file.type || "audio/wav", "X-Filename": file.name }, body: file }),
   removeRecording: (contextVersionId: string, recordingId: string) => request<RecordingRemoval>(`/curriculum/context-versions/${contextVersionId}/recordings/${recordingId}`, { method: "DELETE" }),

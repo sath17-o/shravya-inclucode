@@ -70,6 +70,7 @@ function studentLesson(version: number, approvedTranscript = false): StudentLess
   return {
     ...trustedLesson,
     glossary_terms: trustedLesson.glossary_terms.map(({ misrecognitions: _misrecognitions, ...term }) => term),
+    recovery_support: [],
   };
 }
 

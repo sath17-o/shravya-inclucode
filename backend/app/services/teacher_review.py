@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.enums import ArtifactStatus, ContextReviewEventType, TeacherReviewStatus
 from app.contracts.teacher_review import ContextCompletenessResult, DomainError
-from app.models.foundation import ContextReviewEvent, CourseContextVersion
+from app.models.foundation import ConceptRecoveryPack, ContextReviewEvent, CourseContextVersion
 from app.repositories.curriculum import CurriculumRepository
 from app.services.context_completeness import ContextCompletenessService
 
@@ -95,6 +95,42 @@ class TeacherReviewService:
 
     def approve(self, context_version_id: str, actor_role: str = "teacher") -> CourseContextVersion:
         return self.approve_with_result(context_version_id, actor_role).context
+
+    def approve_recovery_pack(self, recovery_pack_id: str) -> ConceptRecoveryPack:
+        pack = self._session.get(ConceptRecoveryPack, recovery_pack_id)
+        if pack is None:
+            raise DomainError("recovery_pack_not_found", "recovery_pack.not_found", "not_found")
+        if pack.teacher_review_status is TeacherReviewStatus.APPROVED:
+            return pack
+        context = self._repository.get_context_with_graph(pack.context_version_id)
+        if context is None or context.teacher_review_status is TeacherReviewStatus.APPROVED:
+            raise DomainError("recovery_pack_not_mutable", "recovery_pack.not_mutable", "forbidden")
+        concept_ids = {
+            concept.id
+            for chapter in context.chapters
+            for lesson in chapter.lessons
+            for concept in lesson.concepts
+        }
+        if pack.concept_id not in concept_ids:
+            raise DomainError(
+                "recovery_pack_invalid_concept", "recovery_pack.invalid_concept", "validation"
+            )
+        if not all(
+            value.strip()
+            for value in (
+                pack.cue_en,
+                pack.cue_ml,
+                pack.example_en,
+                pack.example_ml,
+                pack.alternate_explanation_en,
+                pack.alternate_explanation_ml,
+            )
+        ):
+            raise DomainError("recovery_pack_incomplete", "recovery_pack.incomplete", "validation")
+        pack.teacher_review_status = TeacherReviewStatus.APPROVED
+        pack.approved_at = self._now()
+        self._session.commit()
+        return pack
 
     def approve_with_result(
         self, context_version_id: str, actor_role: str = "teacher"

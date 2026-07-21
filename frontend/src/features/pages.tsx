@@ -287,6 +287,7 @@ function TeacherContextDetail({ detail, completeness, events, pending, onSubmit,
         </div>
       </section>
       <ResumableTeacherAudioWorkflow contextVersionId={detail.id} key={detail.id} lesson={lesson} onWorkflowChanged={onWorkflowChanged} />
+      <RecoveryPackTeacherSection lesson={lesson} onChanged={onWorkflowChanged} />
       <section className="content-section"><h2>Learning objectives</h2><ol className="stack-list">{lesson.objectives.map((objective) => <li key={objective.id}><Bilingual english={objective.objective_text} malayalam={objective.malayalam_text} /></li>)}</ol></section>
       <section className="content-section"><h2>Approved learning materials</h2><div className="material-grid">{lesson.approved_materials.map((material) => <article className="material-card" key={material.id}><h3>{material.title}</h3><p className="material-source">{material.source_label}</p><p className="pre-line">{material.content}</p></article>)}</div></section>
       <section className="content-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div></section>
@@ -295,6 +296,31 @@ function TeacherContextDetail({ detail, completeness, events, pending, onSubmit,
       <section className="content-section review-history"><h2>Review history</h2><ol className="timeline">{events.map((event) => <li key={event.id}><strong>{eventLabel[event.event_type] ?? "Review activity"}</strong><span>{formatDate(event.created_at)}</span></li>)}</ol></section>
     </>
   );
+}
+
+function RecoveryPackTeacherSection({ lesson, onChanged }: { lesson: Lesson; onChanged: () => Promise<void> }) {
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const packs = lesson.recovery_packs ?? [];
+  if (packs.length === 0) return null;
+  const byConcept = new Map(packs.map((pack) => [pack.concept_id, pack]));
+  const approve = async (packId: string) => {
+    setApprovingId(packId);
+    try { await curriculumApi.approveRecoveryPack(packId); await onChanged(); } finally { setApprovingId(null); }
+  };
+  return <section aria-labelledby="recovery-support-title" className="content-section recovery-pack-section">
+    <p className="eyebrow">NEUROFLEX RECOVERY SUPPORT</p><h2 id="recovery-support-title">Recovery support for this lesson</h2>
+    <p>Review the cues, examples and alternate explanations that students may use when they become stuck.</p>
+    <div className="recovery-pack-list">{[...lesson.concepts].sort((a, b) => a.sequence - b.sequence).map((concept) => {
+      const pack = byConcept.get(concept.id); if (!pack) return null;
+      const approved = pack.teacher_review_status === "APPROVED";
+      return <article className="recovery-pack-card" key={pack.id} aria-labelledby={`recovery-pack-${pack.id}`}>
+        <p className="quiet-copy">Concept {concept.sequence}</p><h3 id={`recovery-pack-${pack.id}`}><Bilingual english={concept.title} malayalam={concept.malayalam_title} /></h3>
+        <dl><div><dt>Cue</dt><dd><Bilingual english={pack.cue_en} malayalam={pack.cue_ml} /></dd></div><div><dt>Example</dt><dd><Bilingual english={pack.example_en} malayalam={pack.example_ml} /></dd></div><div><dt>Alternate explanation</dt><dd><Bilingual english={pack.alternate_explanation_en} malayalam={pack.alternate_explanation_ml} /></dd></div></dl>
+        <p><strong>{approved ? "Approved for students" : "Needs teacher review"}</strong></p>
+        <Button disabled={approved || approvingId === pack.id} onClick={() => void approve(pack.id)} type="button">{approved ? "Recovery pack approved" : "Approve recovery pack"}</Button>
+      </article>;
+    })}</div>
+  </section>;
 }
 
 type TimelineStatus = "not-started" | "current" | "complete" | "failed";

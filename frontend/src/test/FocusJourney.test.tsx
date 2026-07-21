@@ -13,17 +13,32 @@ import {
 import { course, createCurriculumFetch, focusLessonFixture, v1 } from "./curriculumFixtures";
 
 const nativeLocalStorage = window.localStorage;
+const supportNames = {
+  lessAtOnce: /Less at once\s+Show one short idea at a time\./,
+  clearPath: /A clear path\s+Show what I am doing now and what comes next\./,
+  wordSupport: /Help with words\s+Make difficult words clear in Malayalam and English\./,
+  examples: /Examples when needed\s+Show a concrete example when an idea feels unclear\./,
+  chooseAsIGo: /Let me choose as I go\s+Keep every kind of support available during the lesson\./,
+};
 
 function renderApp(path: "/student" | "/student/focus" | "/teacher", fetchMock = createCurriculumFetch()) {
   vi.stubGlobal("fetch", fetchMock);
   return render(<MemoryRouter initialEntries={[path]}><AppProvider><App /></AppProvider></MemoryRouter>);
 }
 
-async function openJourney() {
+async function selectSupport(user: ReturnType<typeof userEvent.setup>, label = supportNames.lessAtOnce) {
+  await user.click(await screen.findByRole("radio", { name: label }));
+  await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+  await screen.findByRole("button", { name: "Start with step 1" });
+}
+
+async function openJourney(fetchMock = createCurriculumFetch(), firstConcept = "What plants need") {
   const user = userEvent.setup();
-  renderApp("/student");
+  renderApp("/student", fetchMock);
   await user.click(await screen.findByRole("button", { name: "Start Focus Journey" }));
-  await screen.findByRole("heading", { name: "What plants need" });
+  await selectSupport(user);
+  await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+  await screen.findByRole("heading", { name: firstConcept });
   return user;
 }
 
@@ -38,11 +53,85 @@ afterEach(() => {
   nativeLocalStorage.clear();
 });
 
-describe("Phase 4A Focus Journey", () => {
+describe("Phase 4 Focus Journey", () => {
   it("shows Start Focus Journey on the approved student lesson", async () => {
     renderApp("/student");
     expect(await screen.findByRole("heading", { name: "Help me focus" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start Focus Journey" })).toBeInTheDocument();
+  });
+
+  it("opens support choice first with five accessible single-select options", async () => {
+    renderApp("/student/focus");
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(screen.getByText("FOCUS JOURNEY")).toBeInTheDocument();
+    expect(screen.getByText("Show one short idea at a time.")).toBeInTheDocument();
+    expect(screen.getByText("Show what I am doing now and what comes next.")).toBeInTheDocument();
+    expect(screen.getByText("Make difficult words clear in Malayalam and English.")).toBeInTheDocument();
+    expect(screen.getByText("Show a concrete example when an idea feels unclear.")).toBeInTheDocument();
+    expect(screen.getByText("Keep every kind of support available during the lesson.")).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(5);
+    const radios = screen.getAllByRole("radio");
+    expect(radios[0]).toHaveAccessibleName(supportNames.lessAtOnce);
+    expect(radios[1]).toHaveAccessibleName(supportNames.clearPath);
+    expect(radios[2]).toHaveAccessibleName(supportNames.wordSupport);
+    expect(radios[3]).toHaveAccessibleName(supportNames.examples);
+    expect(radios[4]).toHaveAccessibleName(supportNames.chooseAsIGo);
+    expect(radios.every((radio) => !radio.hasAttribute("aria-label"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+    expect(screen.queryByText(/ADHD|autism|dyslexia|disability|medical profile/i)).not.toBeInTheDocument();
+  });
+
+  it("selects exactly one support and previews trusted Now, Next, and Later steps", async () => {
+    const user = userEvent.setup();
+    renderApp("/student/focus");
+    await user.click(await screen.findByRole("radio", { name: supportNames.clearPath }));
+    expect(screen.getByRole("radio", { name: supportNames.clearPath })).toBeChecked();
+    expect(screen.getByRole("radio", { name: supportNames.lessAtOnce })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    expect(await screen.findByText("Support: A clear path")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
+    expect(screen.getByText("Now")).toBeInTheDocument();
+    expect(screen.getByText("Next")).toBeInTheDocument();
+    expect(screen.getAllByText("Later")).toHaveLength(3);
+    expect(screen.getByText("What plants need")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change support" }));
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: supportNames.clearPath })).toBeChecked();
+  });
+
+  it("derives preview names and ordering from the approved lesson", async () => {
+    const user = userEvent.setup();
+    renderApp("/student/focus", createCurriculumFetch({
+      transformStudentLesson: (lesson) => ({
+        ...lesson,
+        concepts: lesson.concepts.map((concept) => ({
+          ...concept,
+          title: `Approved preview ${concept.sequence}`,
+        })),
+      }),
+    }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.lessAtOnce }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    const preview = screen.getByRole("heading", { name: "5 small steps" }).closest("section");
+    expect(within(preview!).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("NowApproved preview 1"),
+      expect.stringContaining("NextApproved preview 2"),
+      expect.stringContaining("LaterApproved preview 3"),
+      expect.stringContaining("LaterApproved preview 4"),
+      expect.stringContaining("LaterApproved preview 5"),
+    ]);
+    expect(screen.queryByText("What plants need")).not.toBeInTheDocument();
+  });
+
+  it("restores the selected support and preview screen after a refresh", async () => {
+    const user = userEvent.setup();
+    renderApp("/student/focus");
+    await user.click(await screen.findByRole("radio", { name: supportNames.wordSupport }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    cleanup();
+    renderApp("/student/focus");
+    expect(await screen.findByText("Support: Help with words")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start with step 1" })).toBeInTheDocument();
   });
 
   it("renders trusted concepts in their approved order", async () => {
@@ -59,14 +148,14 @@ describe("Phase 4A Focus Journey", () => {
   });
 
   it("uses mutated approved concepts and explicit glossary relationships without a fixed Photosynthesis mapping", async () => {
-    renderApp("/student/focus", createCurriculumFetch({
+    await openJourney(createCurriculumFetch({
       transformStudentLesson: (lesson) => ({
         ...lesson,
         concepts: lesson.concepts.map((concept) => ({ ...concept, title: `Trusted concept ${concept.sequence}`, definition: `Approved explanation ${concept.sequence}.` })),
         glossary_terms: lesson.glossary_terms.map((term) => ({ ...term, canonical_term: `Approved term ${term.sequence}` })),
       }),
-    }));
-    expect(await screen.findByRole("heading", { name: "Trusted concept 1" })).toBeInTheDocument();
+    }), "Trusted concept 1");
+    expect(screen.getByRole("heading", { name: "Trusted concept 1" })).toBeInTheDocument();
     expect(screen.getByText("Approved explanation 1.")).toBeInTheDocument();
     expect(screen.getByLabelText("Approved term 1")).toBeInTheDocument();
     expect(screen.queryByText("Photosynthesis")).not.toBeInTheDocument();
@@ -165,14 +254,29 @@ describe("Phase 4A Focus Journey", () => {
     await answerAndContinue(user, "Photosynthesis");
     cleanup();
     renderApp("/student/focus", createCurriculumFetch({ initialStudentVersion: 2, initialV2Status: "APPROVED" }));
-    expect(await screen.findByRole("heading", { name: "What plants need" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+  });
+
+  it("changes support without deleting completed concept progress", async () => {
+    const user = await openJourney();
+    await answerAndContinue(user, "Photosynthesis");
+    await user.click(screen.getByRole("button", { name: "Change support" }));
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: supportNames.examples }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    const stored = readFocusJourneyProgress(`shravya:focus:${course.id}:${v1}:v1`, steps).progress;
+    expect(stored.completedStepIds).toContain(steps[0].id);
+    expect(stored.supportMode).toBe("examples");
+    expect(stored.screen).toBe("journey-preview");
   });
 
   it("safely restarts when stored progress is corrupted", async () => {
     window.localStorage.setItem(`shravya:focus:${course.id}:${v1}:v1`, "not-json");
     renderApp("/student/focus");
-    expect(await screen.findByRole("heading", { name: "What plants need" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
   });
 
   it("rejects impossible persisted progress and accepts a fully valid completed journey", () => {
@@ -198,7 +302,7 @@ describe("Phase 4A Focus Journey", () => {
     }
 
     const answers = Object.fromEntries(steps.map((step) => [step.id, step.check.correctAnswer]));
-    const complete = { ...base, currentStepIndex: steps.length - 1, completedStepIds: steps.map((step) => step.id), selectedAnswers: answers, correctAnswers: answers, isComplete: true };
+    const complete = { ...base, supportMode: "less_at_once" as const, screen: "complete" as const, currentStepIndex: steps.length - 1, completedStepIds: steps.map((step) => step.id), selectedAnswers: answers, correctAnswers: answers, isComplete: true };
     window.localStorage.setItem(journeyKey, JSON.stringify(complete));
     expect(readFocusJourneyProgress(journeyKey, steps)).toMatchObject({ hasValidProgress: true, progress: complete });
   });
@@ -210,6 +314,9 @@ describe("Phase 4A Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Restart journey" }));
     expect(screen.getByRole("dialog", { name: "Restart journey?" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Confirm restart" }));
+    expect(await screen.findByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
+    expect(screen.getByText("Support: Less at once")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     expect(window.localStorage.getItem("shravya:focus:another-course:context:v1")).toBe("preserve-me");
   });
@@ -220,12 +327,11 @@ describe("Phase 4A Focus Journey", () => {
       value: { getItem: () => { throw new Error("denied"); }, setItem: () => undefined, removeItem: () => undefined } as unknown as Storage,
     });
     renderApp("/student/focus");
-    expect(await screen.findByRole("heading", { name: "What plants need" })).toBeInTheDocument();
-    expect(screen.getByText("Progress is being kept for this visit only because device storage is unavailable.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
     cleanup();
     Object.defineProperty(window, "localStorage", { configurable: true, get: () => { throw new Error("unavailable"); } });
     renderApp("/student/focus");
-    expect(await screen.findByRole("heading", { name: "What plants need" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
   });
 
   it("keeps in-memory progress when saving or removing storage fails", async () => {
@@ -245,6 +351,8 @@ describe("Phase 4A Focus Journey", () => {
     expect(screen.getByText("Progress is being kept for this visit only because device storage is unavailable.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart journey" }));
     await user.click(screen.getByRole("button", { name: "Confirm restart" }));
+    expect(await screen.findByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     expect(saveAttempts).toBeGreaterThan(0);
@@ -266,6 +374,14 @@ describe("Phase 4A Focus Journey", () => {
     renderApp("/teacher");
     await screen.findByRole("heading", { name: "Teacher Review Workspace" });
     expect(screen.queryByText("Help me focus")).not.toBeInTheDocument();
+  });
+
+  it("returns to the approved full lesson from the preview", async () => {
+    const user = userEvent.setup();
+    renderApp("/student/focus");
+    await selectSupport(user);
+    await user.click(screen.getByRole("button", { name: "Return to lesson" }));
+    expect(await screen.findByRole("heading", { name: "Photosynthesis in Plants" })).toBeInTheDocument();
   });
 
   it("provides labelled progress, a semantic answer group, and keyboard controls", async () => {

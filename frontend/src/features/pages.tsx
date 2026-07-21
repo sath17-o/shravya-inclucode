@@ -9,11 +9,13 @@ import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../demo/config";
 import {
   buildFocusJourneySteps,
   clearFocusJourneyProgress,
+  FOCUS_SUPPORT_OPTIONS,
   focusJourneyStorageKey,
   hasStoredFocusJourneyProgress,
   newFocusJourneyProgress,
   readFocusJourneyProgress,
   saveFocusJourneyProgress,
+  type FocusSupportMode,
   type FocusJourneyProgress,
 } from "./focusJourney";
 
@@ -839,10 +841,10 @@ export function FocusJourneyPage() {
   const storageKey = state.kind === "ready" ? focusJourneyStorageKey(state.data) : null;
 
   useEffect(() => {
-    if (state.kind === "ready" && steps.length > 0 && !progress.paused && !progress.isComplete) {
+    if (state.kind === "ready" && steps.length > 0 && progress.screen === "concept" && !progress.paused && !progress.isComplete) {
       stepHeadingRef.current?.focus();
     }
-  }, [progress.currentStepIndex, progress.isComplete, progress.paused, state.kind, steps.length]);
+  }, [progress.currentStepIndex, progress.isComplete, progress.paused, progress.screen, state.kind, steps.length]);
 
   const updateProgress = (update: (current: FocusJourneyProgress) => FocusJourneyProgress) => {
     if (!storageKey) return;
@@ -857,6 +859,59 @@ export function FocusJourneyPage() {
   if (state.kind === "error") return <ErrorState error={state.error} onRetry={() => void load()} />;
   if (!state.data.is_ready || !lesson || !storageKey || steps.length !== 5) {
     return <section className="empty-state focus-empty-state"><h1>Focus Journey unavailable</h1><p>Your teacher-approved lesson is not ready for this pathway yet.</p><Button onClick={() => navigate("/student")} type="button">Return to full lesson</Button></section>;
+  }
+
+  const chooseSupport = (supportMode: FocusSupportMode) => {
+    updateProgress((current) => ({ ...current, supportMode, screen: "support-choice", paused: false }));
+  };
+
+  if (progress.screen === "support-choice") {
+    return (
+      <article className="focus-journey focus-support-choice" aria-labelledby="focus-support-title">
+        <section className="focus-step-card">
+          <p className="eyebrow">FOCUS JOURNEY</p>
+          <h1 id="focus-support-title">How should Shravya support you right now?</h1>
+          <p>Choose what would make this lesson easier to follow.<br />You can change this at any time.</p>
+          <fieldset className="focus-support-options" aria-describedby="focus-support-reassurance">
+            <legend className="sr-only">Choose one support option</legend>
+            {FOCUS_SUPPORT_OPTIONS.map((option) => (
+              <label className="focus-support-option" key={option.mode}>
+                <input checked={progress.supportMode === option.mode} name="focus-support" onChange={() => chooseSupport(option.mode)} type="radio" value={option.mode} />
+                <span><strong>{option.label}</strong>{" "}<small>{option.description}</small></span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="focus-reassurance" id="focus-support-reassurance">Shravya responds to what helps you learn today.<br />It does not ask for or store a diagnosis.</p>
+          <Button disabled={progress.supportMode === null} onClick={() => updateProgress((current) => ({ ...current, screen: "journey-preview" }))} type="button">Continue with this support</Button>
+        </section>
+      </article>
+    );
+  }
+
+  const support = FOCUS_SUPPORT_OPTIONS.find((option) => option.mode === progress.supportMode);
+  if (progress.screen === "journey-preview" && support) {
+    return (
+      <article className="focus-journey focus-journey-preview" aria-labelledby="focus-preview-title">
+        <section className="focus-step-card">
+          <p className="eyebrow">YOUR LEARNING PATH</p>
+          <h1 id="focus-preview-title">{lesson.title}</h1>
+          <p className="focus-selected-support">Support: {support.label}</p>
+          <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice" }))} type="button">Change support</Button>
+          <section aria-labelledby="focus-preview-steps-title" className="focus-preview-steps">
+            <h2 id="focus-preview-steps-title">5 small steps</h2>
+            <ol>{steps.map((item, index) => <li key={item.id}><span>{index === 0 ? "Now" : index === 1 ? "Next" : "Later"}</span><strong>{item.concept.title}</strong>{item.concept.malayalam_title ? <small lang="ml">{item.concept.malayalam_title}</small> : null}</li>)}</ol>
+          </section>
+          <section aria-labelledby="focus-preview-what-title" className="focus-preview-what">
+            <h2 id="focus-preview-what-title">In each step, you will:</h2>
+            <ul><li>Learn one idea</li><li>Try one small question</li><li>Choose whether to continue, revisit or pause</li></ul>
+          </section>
+          <div className="focus-actions">
+            <Button onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Start with step 1</Button>
+            <Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Return to lesson</Button>
+          </div>
+        </section>
+      </article>
+    );
   }
 
   const step = steps[Math.min(progress.currentStepIndex, steps.length - 1)];
@@ -876,12 +931,13 @@ export function FocusJourneyPage() {
           : Object.fromEntries(Object.entries(current.correctAnswers).filter(([stepId]) => stepId !== step.id)),
         completedStepIds,
         isComplete: isCorrect && current.currentStepIndex === steps.length - 1 && completedStepIds.length === steps.length,
+        screen: isCorrect && current.currentStepIndex === steps.length - 1 && completedStepIds.length === steps.length ? "complete" : current.screen,
       };
     });
   };
 
   const restartJourney = () => {
-    const fresh = newFocusJourneyProgress(storageKey);
+    const fresh = { ...newFocusJourneyProgress(storageKey), supportMode: progress.supportMode, screen: "journey-preview" as const };
     const cleared = clearFocusJourneyProgress(storageKey);
     const saved = saveFocusJourneyProgress(storageKey, fresh);
     if (!cleared || !saved) setPersistenceUnavailable(true);
@@ -889,7 +945,7 @@ export function FocusJourneyPage() {
     setRestartRequested(false);
   };
 
-  if (progress.isComplete) {
+  if (progress.screen === "complete" && progress.isComplete) {
     return (
       <article className="focus-journey" aria-labelledby="focus-complete-title">
         <section className="focus-step-card focus-completion">
@@ -898,7 +954,8 @@ export function FocusJourneyPage() {
           <p>You explored the lesson one step at a time.</p>
           <p className="quiet-copy">{persistenceUnavailable ? "Progress is being kept for this visit only because device storage is unavailable." : "Progress is saved on this device."}</p>
           <div className="focus-actions">
-            <Button onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false }))} type="button">Review this journey</Button>
+            <Button onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Review this journey</Button>
+            <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
             <Button onClick={() => navigate("/student")} type="button">Return to full lesson</Button>
           </div>
         </section>
@@ -916,6 +973,7 @@ export function FocusJourneyPage() {
           <p className="quiet-copy">{persistenceUnavailable ? "Progress is being kept for this visit only because device storage is unavailable." : "Progress is saved on this device."}</p>
           <div className="focus-actions">
             <Button onClick={() => updateProgress((current) => ({ ...current, paused: false }))} type="button">Resume journey</Button>
+            <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
             <Button onClick={() => navigate("/student")} type="button">Exit to lesson</Button>
           </div>
         </section>
@@ -946,8 +1004,9 @@ export function FocusJourneyPage() {
         {selectedAnswer ? <p aria-live="polite" className={`focus-feedback ${answerIsCorrect ? "correct" : "incorrect"}`} role="status">{answerIsCorrect ? "That’s right. You can continue when you’re ready." : "Not quite. Look at the explanation once more and try again."}</p> : null}
         <div className="focus-actions focus-step-actions">
           <Button disabled={progress.currentStepIndex === 0} onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: Math.max(0, current.currentStepIndex - 1) }))} type="button">Back</Button>
-          <Button disabled={!answerIsCorrect} onClick={() => updateProgress((current) => current.currentStepIndex === steps.length - 1 ? { ...current, isComplete: true } : { ...current, currentStepIndex: current.currentStepIndex + 1 })} type="button">Continue</Button>
+          <Button disabled={!answerIsCorrect} onClick={() => updateProgress((current) => current.currentStepIndex === steps.length - 1 ? { ...current, isComplete: true, screen: "complete" } : { ...current, currentStepIndex: current.currentStepIndex + 1 })} type="button">Continue</Button>
           <Button onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button>
+          <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
           <Button onClick={() => navigate("/student")} type="button">Exit to full lesson</Button>
         </div>
         <div className="focus-restart">

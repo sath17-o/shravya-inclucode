@@ -1,11 +1,35 @@
 import type { Concept, GlossaryTerm, Lesson, StudentOverview } from "../api/contracts";
 
 export const FOCUS_JOURNEY_PATHWAY = "focus";
-export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 1;
+export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 2;
+
+export type FocusSupportMode =
+  | "less_at_once"
+  | "clear_path"
+  | "word_support"
+  | "examples"
+  | "choose_as_i_go";
+
+export type FocusJourneyScreen = "support-choice" | "journey-preview" | "concept" | "complete";
+
+export const FOCUS_SUPPORT_OPTIONS: ReadonlyArray<{
+  mode: FocusSupportMode;
+  label: string;
+  description: string;
+}> = [
+  { mode: "less_at_once", label: "Less at once", description: "Show one short idea at a time." },
+  { mode: "clear_path", label: "A clear path", description: "Show what I am doing now and what comes next." },
+  { mode: "word_support", label: "Help with words", description: "Make difficult words clear in Malayalam and English." },
+  { mode: "examples", label: "Examples when needed", description: "Show a concrete example when an idea feels unclear." },
+  { mode: "choose_as_i_go", label: "Let me choose as I go", description: "Keep every kind of support available during the lesson." },
+];
 
 export type FocusJourneyProgress = {
   schemaVersion: number;
   journeyKey: string;
+  trustedContextVersion: number | null;
+  supportMode: FocusSupportMode | null;
+  screen: FocusJourneyScreen;
   currentStepIndex: number;
   completedStepIds: string[];
   selectedAnswers: Record<string, string>;
@@ -82,10 +106,18 @@ export function focusJourneyStorageKey(overview: StudentOverview): string | null
   return `shravya:${FOCUS_JOURNEY_PATHWAY}:${overview.course.id}:${overview.selected_context_id}:v${overview.version_number}`;
 }
 
+function contextVersionFromJourneyKey(journeyKey: string): number | null {
+  const match = /:v(\d+)$/.exec(journeyKey);
+  return match ? Number(match[1]) : null;
+}
+
 export function newFocusJourneyProgress(journeyKey = ""): FocusJourneyProgress {
   return {
     schemaVersion: FOCUS_JOURNEY_PROGRESS_SCHEMA,
     journeyKey,
+    trustedContextVersion: contextVersionFromJourneyKey(journeyKey),
+    supportMode: null,
+    screen: "support-choice",
     currentStepIndex: 0,
     completedStepIds: [],
     selectedAnswers: {},
@@ -112,6 +144,10 @@ function isValidProgress(value: unknown, journeyKey: string, steps: FocusJourney
   if (!value || typeof value !== "object" || steps.length === 0) return false;
   const progress = value as Partial<FocusJourneyProgress>;
   if (progress.schemaVersion !== FOCUS_JOURNEY_PROGRESS_SCHEMA || progress.journeyKey !== journeyKey) return false;
+  if (progress.trustedContextVersion !== contextVersionFromJourneyKey(journeyKey)) return false;
+  if (!FOCUS_SUPPORT_OPTIONS.some((option) => option.mode === progress.supportMode) && progress.supportMode !== null) return false;
+  if (!["support-choice", "journey-preview", "concept", "complete"].includes(progress.screen ?? "")) return false;
+  if (progress.screen !== "support-choice" && progress.supportMode === null) return false;
   if (!Number.isInteger(progress.currentStepIndex) || (progress.currentStepIndex ?? -1) < 0 || (progress.currentStepIndex ?? steps.length) >= steps.length) return false;
   if (!Array.isArray(progress.completedStepIds) || !progress.completedStepIds.every((id) => typeof id === "string")) return false;
   if (new Set(progress.completedStepIds).size !== progress.completedStepIds.length) return false;
@@ -136,7 +172,9 @@ function isValidProgress(value: unknown, journeyKey: string, steps: FocusJourney
 
   const allCompleted = steps.every((step) => completed.has(step.id));
   if (progress.isComplete !== allCompleted) return false;
-  if (progress.isComplete && progress.currentStepIndex !== steps.length - 1) return false;
+  if (progress.isComplete && (progress.currentStepIndex !== steps.length - 1 || progress.screen !== "complete")) return false;
+  if (!progress.isComplete && progress.screen === "complete") return false;
+  if (progress.paused && progress.screen !== "concept") return false;
   const firstIncomplete = steps.findIndex((step) => !completed.has(step.id));
   return progress.isComplete || (progress.currentStepIndex ?? 0) <= firstIncomplete;
 }

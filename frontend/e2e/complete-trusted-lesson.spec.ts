@@ -121,6 +121,16 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByRole("button", { name: "Start Focus Journey" })).toBeVisible();
     await page.getByRole("button", { name: "Start Focus Journey" }).click();
     await expect(page).toHaveURL(/\/student\/focus$/);
+    await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
+    await expect(page.getByText("Shravya responds to what helps you learn today.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+    await page.getByLabel(/Less at once\s+Show one short idea at a time\./).check();
+    await page.getByRole("button", { name: "Continue with this support" }).click();
+    await expect(page.getByText("Support: Less at once")).toBeVisible();
+    await expect(page.getByText("Now")).toBeVisible();
+    await expect(page.getByText("Next")).toBeVisible();
+    await expect(page.getByText("Later")).toHaveCount(3);
+    await page.getByRole("button", { name: "Start with step 1" }).click();
     await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
     await expect(page.getByText("Step 1 of 5")).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Focus Journey progress: Step 1 of 5" })).toBeVisible();

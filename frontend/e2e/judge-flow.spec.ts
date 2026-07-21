@@ -227,6 +227,11 @@ test("Focus Journey restores a paused approved-lesson step after reload", async 
   await mockJudgeApi(page);
   await page.goto("/student");
   await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
+  await page.getByLabel(/Less at once\s+Show one short idea at a time\./).check();
+  await page.getByRole("button", { name: "Continue with this support" }).click();
+  await expect(page.getByText("Support: Less at once")).toBeVisible();
+  await page.getByRole("button", { name: "Start with step 1" }).click();
   await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
   await page.getByLabel("Photosynthesis").check();
   await page.getByRole("button", { name: "Continue" }).click();
@@ -247,7 +252,7 @@ test("browser Back from Focus Journey returns to the approved student lesson", a
   await mockJudgeApi(page);
   await page.goto("/student");
   await page.getByRole("button", { name: "Start Focus Journey" }).click();
-  await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Teacher Review Workspace" })).toHaveCount(0);

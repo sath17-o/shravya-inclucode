@@ -29,6 +29,7 @@ function lesson(version: number) {
     approved_materials: [{ id: "m1", title: improved ? "Improved teacher explanation" : "Trusted teacher explanation", material_type: "teacher_note", source_label: "Teacher-approved classroom note", content: improved ? "Improved teacher explanation" : "Plants use chlorophyll to capture sunlight.", language: "bilingual", sequence: 1 }],
     glossary_terms: glossary,
     concepts: [["What plants need", "സസ്യങ്ങൾക്ക് വേണ്ട ഘടകങ്ങൾ"], ["How inputs reach the leaf", "ഘടകങ്ങൾ ഇലയിലെത്തുന്നത്"], ["Sunlight and chlorophyll", "സൂര്യപ്രകാശവും ക്ലോറോഫിലും"], ["Making glucose", "ഗ്ലൂക്കോസ് നിർമ്മാണം"], ["Releasing oxygen", "ഓക്സിജൻ പുറന്തള്ളൽ"]].map(([title, malayalam_title], index) => ({ id: `c${index}`, concept_key: `c${index}`, title, malayalam_title, definition: title, malayalam_definition: malayalam_title, sequence: index + 1 })),
+    recovery_support: [0, 1, 2, 3, 4].map((index) => ({ concept_id: `c${index}`, cue: { english: `Approved cue ${index + 1}.`, malayalam: `അംഗീകരിച്ച സൂചന ${index + 1}.` }, example: { english: `Approved example ${index + 1}.`, malayalam: `അംഗീകരിച്ച ഉദാഹരണം ${index + 1}.` }, alternate_explanation: { english: `Approved alternate explanation ${index + 1}.`, malayalam: `അംഗീകരിച്ച വിശദീകരണം ${index + 1}.` } })),
     concept_relationships: [],
     questions: [{ id: "q1", related_concept_id: "c0", source_type: "teacher_question", source_label: "Teacher question", question_text: "What inputs do plants need?", malayalam_question_text: "സസ്യങ്ങൾക്ക് എന്ത് വേണം?", sequence: 1, year: null, marks: null }, ...(improved ? [{ id: "q2", related_concept_id: "c4", source_type: "teacher_question", source_label: "Improved classroom question", question_text: "Put the five concepts in a learning flow.", malayalam_question_text: "അഞ്ച് ആശയങ്ങളെ ക്രമീകരിക്കുക.", sequence: 2, year: null, marks: 3 }] : [])],
   };
@@ -223,7 +224,7 @@ test("teacher audio review restores the durable deterministic transcript after r
   await expect(page.getByRole("button", { name: "Confirm" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Focus Journey restores a paused approved-lesson step after reload", async ({ page }) => {
+test("Focus Journey restores recovery and a paused approved-lesson step after reload", async ({ page }) => {
   await mockJudgeApi(page);
   await page.goto("/student");
   await page.getByRole("button", { name: "Start Focus Journey" }).click();
@@ -233,8 +234,16 @@ test("Focus Journey restores a paused approved-lesson step after reload", async 
   await expect(page.getByText("Support: Less at once")).toBeVisible();
   await page.getByRole("button", { name: "Start with step 1" }).click();
   await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+  await page.getByRole("button", { name: "I’m stuck" }).click();
+  await expect(page.getByRole("heading", { name: "Let’s find a way through" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Let’s find a way through" })).toBeVisible();
+  await page.getByRole("button", { name: "Show the important words" }).click();
+  await expect(page.getByRole("heading", { name: "Start with the important words" })).toBeVisible();
+  await page.getByRole("button", { name: "Return to concept" }).click();
+  await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
   await page.getByLabel("Photosynthesis").check();
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How inputs reach the leaf" })).toBeVisible();
   await page.getByRole("button", { name: "Pause journey" }).click();
   await expect(page.getByRole("heading", { name: "Journey paused" })).toBeVisible();

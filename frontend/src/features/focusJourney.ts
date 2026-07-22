@@ -1,7 +1,7 @@
 import type { Concept, GlossaryTerm, Lesson, StudentOverview } from "../api/contracts";
 
 export const FOCUS_JOURNEY_PATHWAY = "focus";
-export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 2;
+export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 4;
 
 export type FocusSupportMode =
   | "less_at_once"
@@ -11,6 +11,15 @@ export type FocusSupportMode =
   | "choose_as_i_go";
 
 export type FocusJourneyScreen = "support-choice" | "journey-preview" | "concept" | "complete";
+
+export type FocusRecoveryStage = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type FocusRecoveryProgress = {
+  recoveryOpened: boolean;
+  currentRecoveryStage: FocusRecoveryStage;
+  highestRecoveryStage: FocusRecoveryStage;
+  returnedToTry: boolean;
+};
 
 export const FOCUS_SUPPORT_OPTIONS: ReadonlyArray<{
   mode: FocusSupportMode;
@@ -31,6 +40,7 @@ export type FocusJourneyProgress = {
   supportMode: FocusSupportMode | null;
   screen: FocusJourneyScreen;
   currentStepIndex: number;
+  recoveryByConcept: Record<string, FocusRecoveryProgress>;
   completedStepIds: string[];
   selectedAnswers: Record<string, string>;
   correctAnswers: Record<string, string>;
@@ -119,6 +129,7 @@ export function newFocusJourneyProgress(journeyKey = ""): FocusJourneyProgress {
     supportMode: null,
     screen: "support-choice",
     currentStepIndex: 0,
+    recoveryByConcept: {},
     completedStepIds: [],
     selectedAnswers: {},
     correctAnswers: {},
@@ -140,6 +151,26 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return Boolean(value && typeof value === "object") && Object.values(value as Record<string, unknown>).every((item) => typeof item === "string");
 }
 
+function isValidRecoveryRecord(value: unknown, steps: FocusJourneyStep[]): value is Record<string, FocusRecoveryProgress> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const stepIds = new Set(steps.map((step) => step.id));
+  const fields = new Set(["recoveryOpened", "currentRecoveryStage", "highestRecoveryStage", "returnedToTry"]);
+  return Object.entries(value as Record<string, unknown>).every(([conceptId, recovery]) => {
+    if (!stepIds.has(conceptId) || !recovery || typeof recovery !== "object" || Array.isArray(recovery)) return false;
+    const candidate = recovery as Partial<FocusRecoveryProgress>;
+    return Object.keys(candidate).every((field) => fields.has(field))
+      && typeof candidate.recoveryOpened === "boolean"
+      && typeof candidate.returnedToTry === "boolean"
+      && !(candidate.recoveryOpened && candidate.returnedToTry)
+      && Number.isInteger(candidate.currentRecoveryStage)
+      && Number.isInteger(candidate.highestRecoveryStage)
+      && (candidate.currentRecoveryStage ?? 0) >= 1
+      && (candidate.currentRecoveryStage ?? 7) <= 6
+      && (candidate.highestRecoveryStage ?? 0) >= (candidate.currentRecoveryStage ?? 7)
+      && (candidate.highestRecoveryStage ?? 7) <= 6;
+  });
+}
+
 function isValidProgress(value: unknown, journeyKey: string, steps: FocusJourneyStep[]): value is FocusJourneyProgress {
   if (!value || typeof value !== "object" || steps.length === 0) return false;
   const progress = value as Partial<FocusJourneyProgress>;
@@ -151,6 +182,7 @@ function isValidProgress(value: unknown, journeyKey: string, steps: FocusJourney
   if (!Number.isInteger(progress.currentStepIndex) || (progress.currentStepIndex ?? -1) < 0 || (progress.currentStepIndex ?? steps.length) >= steps.length) return false;
   if (!Array.isArray(progress.completedStepIds) || !progress.completedStepIds.every((id) => typeof id === "string")) return false;
   if (new Set(progress.completedStepIds).size !== progress.completedStepIds.length) return false;
+  if (!isValidRecoveryRecord(progress.recoveryByConcept, steps)) return false;
   if (!isStringRecord(progress.selectedAnswers) || !isStringRecord(progress.correctAnswers)) return false;
   if (typeof progress.paused !== "boolean" || typeof progress.isComplete !== "boolean" || typeof progress.lastUpdated !== "string" || Number.isNaN(Date.parse(progress.lastUpdated))) return false;
 

@@ -10,6 +10,7 @@ import {
   newFocusJourneyProgress,
   readFocusJourneyProgress,
 } from "../features/focusJourney";
+import type { StudentLesson } from "../api/contracts";
 import { course, createCurriculumFetch, focusLessonFixture, v1 } from "./curriculumFixtures";
 
 const nativeLocalStorage = window.localStorage;
@@ -20,6 +21,24 @@ const supportNames = {
   examples: /Examples when needed\s+Show a concrete example when an idea feels unclear\./,
   chooseAsIGo: /Let me choose as I go\s+Keep every kind of support available during the lesson\./,
 };
+
+function withApprovedRecoverySupport(lesson: StudentLesson): StudentLesson {
+  return {
+    ...lesson,
+    recovery_support: lesson.concepts.map((concept) => ({
+      concept_id: concept.id,
+      cue: { english: `Approved cue for ${concept.title}.`, malayalam: `അംഗീകരിച്ച സൂചന ${concept.sequence}.` },
+      example: { english: `Approved example for ${concept.title}.`, malayalam: `അംഗീകരിച്ച ഉദാഹരണം ${concept.sequence}.` },
+      alternate_explanation: { english: `Approved alternate explanation for ${concept.title}.`, malayalam: `അംഗീകരിച്ച മറ്റൊരു വിശദീകരണം ${concept.sequence}.` },
+    })),
+  };
+}
+
+function recoveryFetch(transform?: (lesson: StudentLesson) => StudentLesson) {
+  return createCurriculumFetch({
+    transformStudentLesson: (lesson) => transform ? transform(withApprovedRecoverySupport(lesson)) : withApprovedRecoverySupport(lesson),
+  });
+}
 
 function renderApp(path: "/student" | "/student/focus" | "/teacher", fetchMock = createCurriculumFetch()) {
   vi.stubGlobal("fetch", fetchMock);
@@ -32,7 +51,7 @@ async function selectSupport(user: ReturnType<typeof userEvent.setup>, label = s
   await screen.findByRole("button", { name: "Start with step 1" });
 }
 
-async function openJourney(fetchMock = createCurriculumFetch(), firstConcept = "What plants need") {
+async function openJourney(fetchMock = recoveryFetch(), firstConcept = "What plants need") {
   const user = userEvent.setup();
   renderApp("/student", fetchMock);
   await user.click(await screen.findByRole("button", { name: "Start Focus Journey" }));
@@ -61,7 +80,7 @@ describe("Phase 4 Focus Journey", () => {
   });
 
   it("opens support choice first with five accessible single-select options", async () => {
-    renderApp("/student/focus");
+    renderApp("/student/focus", recoveryFetch());
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
     expect(screen.getByText("FOCUS JOURNEY")).toBeInTheDocument();
     expect(screen.getByText("Show one short idea at a time.")).toBeInTheDocument();
@@ -251,11 +270,210 @@ describe("Phase 4 Focus Journey", () => {
 
   it("starts a separate journey when the approved context version changes", async () => {
     const user = await openJourney();
-    await answerAndContinue(user, "Photosynthesis");
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
     cleanup();
     renderApp("/student/focus", createCurriculumFetch({ initialStudentVersion: 2, initialV2Status: "APPROVED" }));
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+  });
+
+  it("opens the approved recovery journey without completing or skipping the current concept", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    const recovery = await screen.findByRole("heading", { name: "Let’s find a way through" });
+    expect(recovery).toHaveFocus();
+    const panel = recovery.closest("section");
+    expect(within(panel!).getByText("What plants need")).toBeInTheDocument();
+    expect(within(panel!).getByText("Show the important words")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
+  it("provides the recovery action on every approved concept screen", async () => {
+    const user = await openJourney();
+    for (const answer of ["Photosynthesis", "Stomata", "Chlorophyll", "Glucose"]) {
+      expect(screen.getByRole("button", { name: "I’m stuck" })).toBeInTheDocument();
+      await answerAndContinue(user, answer);
+    }
+    expect(await screen.findByRole("heading", { name: "Releasing oxygen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "I’m stuck" })).toBeInTheDocument();
+  });
+
+  it("reveals only approved recovery support in six deliberate stages", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    const words = await screen.findByRole("heading", { name: "Start with the important words" });
+    expect(within(words.closest("section")!).getByText("Water")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
+    expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show a concrete example" }));
+    expect(await screen.findByText("Approved example for What plants need.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show another explanation" }));
+    expect(await screen.findByText("Approved alternate explanation for What plants need.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show where this fits" }));
+    const flow = await screen.findByRole("heading", { name: "Where this fits in the lesson" });
+    expect(within(flow.closest("section")!).getByText("Now")).toBeInTheDocument();
+    expect(within(flow.closest("section")!).getByText("Next")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Let me try again" }));
+    expect(screen.queryByRole("heading", { name: "Where this fits in the lesson" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Photosynthesis")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Continue support" }));
+    expect(await screen.findByRole("heading", { name: "Where this fits in the lesson" })).toBeInTheDocument();
+  });
+
+  it("derives the recovery flow from the approved concept sequence", async () => {
+    const user = await openJourney(recoveryFetch((lesson) => ({
+        ...lesson,
+        concepts: lesson.concepts.map((concept) => ({ ...concept, title: `Approved recovery ${concept.sequence}` })),
+      })), "Approved recovery 1");
+    await answerAndContinue(user, "Photosynthesis");
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
+    await user.click(screen.getByRole("button", { name: "Show a concrete example" }));
+    await user.click(screen.getByRole("button", { name: "Show another explanation" }));
+    await user.click(screen.getByRole("button", { name: "Show where this fits" }));
+    const flow = await screen.findByRole("heading", { name: "Where this fits in the lesson" });
+    const panel = within(flow.closest("section")!);
+    expect(panel.getByText("Approved recovery 1")).toBeInTheDocument();
+    expect(panel.getByText("Approved recovery 2")).toBeInTheDocument();
+    expect(panel.getByText("Approved recovery 3")).toBeInTheDocument();
+  });
+
+  it("fails closed when the approved recovery support is missing", async () => {
+    const user = await openJourney(createCurriculumFetch());
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
+  it("fails closed for an incomplete matching recovery pack without rendering partial support", async () => {
+    const user = await openJourney(recoveryFetch((lesson) => ({
+      ...lesson,
+      recovery_support: lesson.recovery_support.map((pack, index) => index === 0 ? {
+        ...pack,
+        cue: { ...pack.cue, english: "" },
+      } : pack),
+    })));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Approved example for What plants need.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
+  it("fails closed for duplicate matching packs instead of selecting either pack", async () => {
+    const user = await openJourney(recoveryFetch((lesson) => ({
+      ...lesson,
+      recovery_support: [...lesson.recovery_support, {
+        ...lesson.recovery_support[0],
+        cue: { english: "Duplicate pack cue.", malayalam: "ആവര്‍ത്തിച്ച സൂചന." },
+      }],
+    })));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Approved cue for What plants need.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Duplicate pack cue.")).not.toBeInTheDocument();
+  });
+
+  it("fails closed for a pack belonging to another concept", async () => {
+    const user = await openJourney(recoveryFetch((lesson) => ({
+      ...lesson,
+      recovery_support: lesson.recovery_support.filter((pack) => pack.concept_id !== "concept-1"),
+    })));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Approved cue for How inputs reach the leaf.")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
+  });
+
+  it("keeps recovery stage isolated for each approved concept", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
+    expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: /^Continue$/ }));
+    expect(await screen.findByRole("heading", { name: "How inputs reach the leaf" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
+    expect(screen.queryByText("Approved cue for What plants need.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Return to concept" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
+  });
+
+  it("restores an open recovery stage after remounting and clears it on restart", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    cleanup();
+    renderApp("/student/focus", recoveryFetch());
+    expect(await screen.findByRole("heading", { name: "Start with the important words" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
+    await user.click(screen.getByRole("button", { name: "Confirm restart" }));
+    expect(await screen.findByText("Support: Less at once")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
+  });
+
+  it("uses each selected support mode only to present approved recovery support", async () => {
+    const user = userEvent.setup();
+    renderApp("/student/focus", recoveryFetch());
+    await user.click(await screen.findByRole("radio", { name: supportNames.clearPath }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByText("Support step 1 of 6 · Next: Show the important words")).toBeInTheDocument();
+    cleanup();
+    nativeLocalStorage.clear();
+    renderApp("/student/focus", recoveryFetch());
+    await user.click(await screen.findByRole("radio", { name: supportNames.wordSupport }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    const wordSupportPanel = screen.getByRole("heading", { name: "Start with the important words" }).closest("section")!;
+    expect(within(wordSupportPanel).getByText("Photosynthesis")).toBeInTheDocument();
+    cleanup();
+    nativeLocalStorage.clear();
+    renderApp("/student/focus", recoveryFetch());
+    await user.click(await screen.findByRole("radio", { name: supportNames.examples }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
+    await user.click(screen.getByRole("button", { name: "Show a concrete example" }));
+    expect(await screen.findByText("Approved example for What plants need.")).toBeInTheDocument();
+    cleanup();
+    nativeLocalStorage.clear();
+    renderApp("/student/focus", recoveryFetch());
+    await user.click(await screen.findByRole("radio", { name: supportNames.chooseAsIGo }));
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    await user.click(screen.getByRole("button", { name: "Start with step 1" }));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByRole("button", { name: "Important words" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Another explanation" })).toBeInTheDocument();
+  });
+
+  it("keeps the recovery view canonical-only while Malayalam support remains available", async () => {
+    const user = await openJourney();
+    await answerAndContinue(user, "Photosynthesis");
+    await answerAndContinue(user, "Stomata");
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    const panel = await screen.findByRole("heading", { name: "Start with the important words" });
+    expect(within(panel.closest("section")!).getByText("Chlorophyll")).toBeInTheDocument();
+    expect(within(panel.closest("section")!).getByText("ക്ലോറോഫിൽ")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\bchlorophil\b/);
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Unsure" })).not.toBeInTheDocument();
   });
 
   it("changes support without deleting completed concept progress", async () => {
@@ -279,6 +497,30 @@ describe("Phase 4 Focus Journey", () => {
     expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
   });
 
+  it("resets contradictory persisted recovery without opening or completing the concept", async () => {
+    const journeyKey = `shravya:focus:${course.id}:${v1}:v1`;
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    const contradictory = {
+      ...newFocusJourneyProgress(journeyKey),
+      supportMode: "less_at_once" as const,
+      screen: "concept" as const,
+      recoveryByConcept: {
+        [steps[0].id]: {
+          recoveryOpened: true,
+          currentRecoveryStage: 3,
+          highestRecoveryStage: 3,
+          returnedToTry: true,
+        },
+      },
+    };
+    window.localStorage.setItem(journeyKey, JSON.stringify(contradictory));
+    expect(readFocusJourneyProgress(journeyKey, steps).hasValidProgress).toBe(false);
+    renderApp("/student/focus", recoveryFetch());
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Let’s find a way through" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+  });
+
   it("rejects impossible persisted progress and accepts a fully valid completed journey", () => {
     const journeyKey = `shravya:focus:${course.id}:${v1}:v1`;
     const steps = buildFocusJourneySteps(focusLessonFixture());
@@ -292,6 +534,11 @@ describe("Phase 4 Focus Journey", () => {
       { ...base, currentStepIndex: steps.length },
       { ...base, lastUpdated: "not-a-date" },
       { ...base, journeyKey: "shravya:focus:another-course:another-context:v2" },
+      { ...base, recoveryByConcept: { [steps[0].id]: { recoveryOpened: true, currentRecoveryStage: 2, highestRecoveryStage: 2, returnedToTry: true } } },
+      { ...base, recoveryByConcept: { [steps[0].id]: { recoveryOpened: false, currentRecoveryStage: 0, highestRecoveryStage: 1, returnedToTry: false } } },
+      { ...base, recoveryByConcept: { [steps[0].id]: { recoveryOpened: false, currentRecoveryStage: 4, highestRecoveryStage: 3, returnedToTry: false } } },
+      { ...base, recoveryByConcept: { [steps[0].id]: { recoveryOpened: "yes", currentRecoveryStage: 2, highestRecoveryStage: 2, returnedToTry: false } } },
+      { ...base, recoveryByConcept: { [steps[0].id]: { recoveryOpened: false, currentRecoveryStage: 2, highestRecoveryStage: 2, returnedToTry: false, rawPack: "untrusted" } } },
     ];
     for (const invalid of invalidStates) {
       window.localStorage.setItem(journeyKey, JSON.stringify(invalid));

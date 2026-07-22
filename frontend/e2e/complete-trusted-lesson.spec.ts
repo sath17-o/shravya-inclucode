@@ -27,8 +27,10 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByRole("button", { name: "Teacher" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("heading", { name: "Recovery support for this lesson" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Approve recovery pack" })).toHaveCount(5);
-    await page.getByRole("button", { name: "Approve recovery pack" }).first().click();
-    await expect(page.getByRole("button", { name: "Recovery pack approved" })).toHaveCount(1);
+    for (let pack = 0; pack < 5; pack += 1) {
+      await page.getByRole("button", { name: "Approve recovery pack" }).first().click();
+    }
+    await expect(page.getByRole("button", { name: "Recovery pack approved" })).toHaveCount(5);
 
     const audioWorkflow = page.locator(".audio-workflow");
     const workflow = page.getByRole("region", { name: "Recording workflow" });
@@ -104,7 +106,7 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByRole("button", { name: /Version 2/ })).toContainText("Currently visible to students");
     const projection = await page.request.get(`${realBackendApiBaseUrl}/student/courses/${PHOTOSYNTHESIS_DEMO_COURSE_ID}/lesson-overview`);
     expect(projection.status()).toBe(200);
-    expect((await projection.json()).data.chapters[0].lessons[0].recovery_support).toEqual([]);
+    expect((await projection.json()).data.chapters[0].lessons[0].recovery_support).toHaveLength(5);
 
     await page.getByRole("button", { name: "Student", exact: true }).click();
     await expect(navigation.getByRole("link", { name: "Student lesson" })).toHaveAttribute("aria-current", "page");
@@ -147,6 +149,25 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByText("Progress is saved on this device.")).toBeVisible();
     await expect(page.locator(".focus-step-card h1")).toHaveCount(1);
     await expect(page.locator(".focus-journey")).not.toContainText(/score|streak|timer|autoplay|punish/i);
+    await page.getByRole("button", { name: "I’m stuck" }).click();
+    await expect(page.getByRole("heading", { name: "Let’s find a way through" })).toBeVisible();
+    await page.getByRole("button", { name: "Show the important words" }).click();
+    await expect(page.getByRole("heading", { name: "Start with the important words" })).toBeVisible();
+    await page.getByRole("button", { name: "Give me a small cue" }).click();
+    await expect(page.getByRole("heading", { name: "Here is one small cue" })).toBeVisible();
+    await page.getByRole("button", { name: "Show a concrete example" }).click();
+    await expect(page.getByRole("heading", { name: "See one concrete example" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "See one concrete example" })).toBeVisible();
+    await page.getByRole("button", { name: "Show another explanation" }).click();
+    await page.getByRole("button", { name: "Show where this fits" }).click();
+    await expect(page.getByRole("heading", { name: "Where this fits in the lesson" })).toBeVisible();
+    await page.getByRole("button", { name: "Let me try again" }).click();
+    await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/\bchlorophil\b/);
+    await expect(page.getByRole("button", { name: "Confirm" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Unsure" })).toHaveCount(0);
     await page.getByRole("button", { name: "Exit to full lesson" }).click();
     await expect(page).toHaveURL(/\/student$/);
     await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();

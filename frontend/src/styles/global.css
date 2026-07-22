@@ -169,6 +169,18 @@ p { max-inline-size: 75ch; }
 .focus-preview-steps li::marker { color: #24584d; font-weight: 850; }
 .focus-preview-steps li > span { color: #1d4e42; font-size: 0.9rem; font-weight: 850; text-transform: uppercase; letter-spacing: 0.04em; }
 .focus-secondary-action { color: #214a40; background: #fff; border-color: #4f866f; }
+.focus-recovery { display: grid; gap: 0.8rem; padding: 1rem; color: #17332d; background: #f6faf7; border: 2px solid #75a98d; border-radius: 0.75rem; }
+.focus-recovery h2, .focus-recovery h3 { margin: 0; }
+.focus-recovery-card, .focus-recovery-words, .focus-recovery-flow { display: grid; gap: 0.65rem; padding: 1rem; margin: 0; background: #fff; border: 1px solid #b8d0c1; border-radius: 0.65rem; }
+.focus-recovery-card { font-size: 1.05rem; line-height: 1.75; }
+.focus-recovery-card p { margin: 0; }
+.focus-recovery-words { list-style: none; }
+.focus-recovery-words li { padding: 0.65rem 0.75rem; background: #f5f8f6; border: 1px solid #c7d8ce; border-radius: 0.55rem; line-height: 1.8; }
+.focus-recovery-words.priority li { font-size: 1.08rem; font-weight: 800; }
+.focus-recovery-menu { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.focus-recovery-flow { display: grid; gap: 0.6rem; padding: 0; margin: 0; list-style: none; }
+.focus-recovery-flow li { display: grid; gap: 0.2rem; padding: 0.75rem; background: #fff; border: 1px solid #b8d0c1; border-radius: 0.55rem; }
+.focus-recovery-flow li > span { color: #1d4e42; font-size: 0.9rem; font-weight: 850; text-transform: uppercase; letter-spacing: 0.04em; }
 .recovery-pack-list { display: grid; gap: 1rem; }
 .recovery-pack-card { display: grid; gap: 0.75rem; padding: 1rem; background: #fff; border: 1px solid #b8d0c1; border-radius: 0.75rem; }
 .recovery-pack-card h3, .recovery-pack-card p { margin: 0; }

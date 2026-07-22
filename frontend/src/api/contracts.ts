@@ -110,19 +110,20 @@ export type Lesson = {
   approved_transcript: StudentTranscript | null;
 };
 export type StudentLesson = Omit<Lesson, "glossary_terms" | "recovery_packs"> & { glossary_terms: StudentGlossaryTerm[]; recovery_support: StudentRecoverySupport[] };
-export type Recording = { id: string; lesson_id: string; original_filename: string; mime_type: string; byte_size: number; sha256: string; duration_ms: number; source_status: string; workflow_status: string };
+export type Recording = { id: string; lesson_id: string; original_filename: string; mime_type: string; byte_size: number; sha256: string; duration_ms: number; audio_format: string | null; sample_rate_hz: number | null; channel_count: number | null; sample_width_bits: number | null; frame_count: number | null; source_status: string; workflow_status: string };
 export type RecordingRemoval = { recording_id: string; removed: boolean };
 export type ProcessingJob = { id: string; status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED"; stage: string; recoverable: boolean | null; recording_id: string; resulting_transcript_revision_id: string | null; error_code: string | null };
 export type TranscriptSegment = { id: string; sequence: number; start_ms: number; end_ms: number; text: string };
 export type TranscriptSegmentInput = { sequence?: number; start_ms: number; end_ms: number; text: string };
 export type TranscriptSuggestion = { id: string; transcript_segment_id: string; glossary_term_id: string | null; detected_text: string; canonical_term: string | null; malayalam_support_label: string | null; latest_decision: "CONFIRMED" | "REJECTED" | "UNSURE" | null };
 export type TranscriptQuality = { quality_status: "VERIFIED" | "NEEDS_REVIEW" | "FAILED"; measured_coverage?: number | null; reasons: { reason_code: string; severity: string; message_key: string; measured_value: number | null; threshold: number | null; recovery_action: string | null }[] };
-export type TranscriptRevision = { id: string; recording_id: string; revision_number: number; copied_from_transcript_revision_id: string | null; source_status: string; provider_name: string; provider_version: string | null; provenance_label: string; teacher_review_status: ReviewStatus; approved_at: string | null; segments: TranscriptSegment[]; suggestions: TranscriptSuggestion[]; quality: TranscriptQuality | null };
+export type TranscriptProvenanceSummary = { mode: string; provider_implementation: string; model_identifier: string | null; device: string | null; language_detected: string | null; inference_seconds: number | null; local_only: boolean };
+export type TranscriptRevision = { id: string; recording_id: string; revision_number: number; copied_from_transcript_revision_id: string | null; source_status: string; provider_name: string; provider_version: string | null; provenance_label: string; teacher_review_status: ReviewStatus; approved_at: string | null; segments: TranscriptSegment[]; suggestions: TranscriptSuggestion[]; quality: TranscriptQuality | null; provenance_summary: TranscriptProvenanceSummary | null };
 export type AudioWorkflowState = "NO_RECORDING" | "UPLOADED" | "PROCESSING" | "PROCESSING_FAILED" | "MANUAL_TRANSCRIPT_REQUIRED" | "NEEDS_REVIEW" | "QUALITY_BLOCKED" | "QUALITY_VERIFIED" | "TRANSCRIPT_APPROVED" | "REMOVAL_PENDING" | "RECOVERY_CONFLICT";
 export type AudioWorkflowSummary = {
   context_version_id: string;
   state: AudioWorkflowState;
-  recording: { id: string; original_filename: string; mime_type: string; duration_ms: number; source_status: string; created_at: string; content_url: string } | null;
+  recording: { id: string; original_filename: string; mime_type: string; duration_ms: number; audio_format: string | null; sample_rate_hz: number | null; channel_count: number | null; sample_width_bits: number | null; source_status: string; created_at: string; content_url: string } | null;
   latest_job: { id: string; status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"; stage: string; recoverable: boolean | null; error_code: string | null; message: string | null } | null;
   latest_revision: TranscriptRevision | null;
   deletion: { status: string; recoverable: boolean; message: string } | null;

@@ -21,11 +21,11 @@ function timelineSummary(state: AudioWorkflowSummary["state"]): AudioWorkflowSum
   return {
     context_version_id: "context-v2",
     state,
-    recording: hasRecording ? { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" } : null,
+    recording: hasRecording ? { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, audio_format: "PCM WAV", sample_rate_hz: 16000, channel_count: 1, sample_width_bits: 16, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" } : null,
     latest_job: state === "PROCESSING_FAILED" ? { id: "job-1", status: "FAILED", stage: "Transcription", recoverable: true, error_code: "DEMO_FAILURE", message: "Transcription needs teacher attention." } : state === "PROCESSING" ? { id: "job-1", status: "RUNNING", stage: "Transcribing", recoverable: false, error_code: null, message: null } : null,
     latest_revision: hasRevision ? {
       id: "revision-1", recording_id: "recording-1", revision_number: 1, copied_from_transcript_revision_id: null, source_status: "DEMO", provider_name: "demo", provider_version: "phase-3b", provenance_label: "Deterministic offline demo transcription", teacher_review_status: state === "TRANSCRIPT_APPROVED" ? "APPROVED" : "DRAFT", approved_at: state === "TRANSCRIPT_APPROVED" ? "2026-07-16T09:05:00Z" : null,
-      segments: [{ id: "segment-1", sequence: 1, start_ms: 0, end_ms: 7654, text: "Plants need water." }], suggestions: [], quality: null,
+      segments: [{ id: "segment-1", sequence: 1, start_ms: 0, end_ms: 7654, text: "Plants need water." }], suggestions: [], quality: null, provenance_summary: null,
     } : null,
     deletion: state === "REMOVAL_PENDING" ? { status: "PENDING", recoverable: true, message: "Recording cleanup is in progress." } : null,
     capabilities: { can_start_processing: state === "UPLOADED", can_retry_processing: state === "PROCESSING_FAILED", can_enter_manual_transcript: hasRecording, can_edit_transcript: hasRevision, can_assess_quality: hasRevision, can_approve_transcript: state === "QUALITY_VERIFIED", can_remove_recording: hasRecording },
@@ -183,6 +183,31 @@ describe("Phase 3A curriculum experience", () => {
     }
   });
 
+  it("shows a restrained local-only transcription provenance summary to the teacher", async () => {
+    const summary = timelineSummary("NEEDS_REVIEW");
+    summary.latest_revision = {
+      ...summary.latest_revision!,
+      provenance_label: "Local speech recognition processed on this device; teacher review required.",
+      provider_name: "local-faster-whisper",
+      provider_version: "1.2.1",
+      provenance_summary: {
+        mode: "local_faster_whisper",
+        provider_implementation: "local-faster-whisper",
+        model_identifier: "small",
+        device: "cpu",
+        language_detected: "ml",
+        inference_seconds: 2.4,
+        local_only: true,
+      },
+    };
+
+    const view = await openTeacherAudio(summary);
+    expect(await screen.findByText(/Local speech recognition · Model: small/)).toBeInTheDocument();
+    expect(screen.getByText(/Processed on this device/)).toBeInTheDocument();
+    expect(screen.getByText(/No classroom audio was sent to a cloud transcription service/)).toBeInTheDocument();
+    view.unmount();
+  });
+
   it("shows Selected and Uploading only while their local action state is active", async () => {
     const user = userEvent.setup();
     const baseFetch = createCurriculumFetch();
@@ -220,7 +245,7 @@ describe("Phase 3A curriculum experience", () => {
     const revision = {
       id: "revision-1", recording_id: "recording-1", revision_number: 1,
       copied_from_transcript_revision_id: null as string | null, source_status: "DEMO", provider_name: "demo", provider_version: "phase-3b",
-      provenance_label: "Deterministic demo transcription", teacher_review_status: "DRAFT", approved_at: null,
+      provenance_label: "Deterministic demo transcription", teacher_review_status: "DRAFT", approved_at: null, provenance_summary: null,
       segments: [
         { id: "segment-1", sequence: 1, start_ms: 0, end_ms: 3000, text: "Plants need water." },
         { id: "segment-2", sequence: 2, start_ms: 3000, end_ms: 6000, text: "Leaf chlorophil captures light." },
@@ -232,7 +257,7 @@ describe("Phase 3A curriculum experience", () => {
     const workflowSummary = (contextVersionId: string) => ({
       context_version_id: contextVersionId,
       state: workflowStage === "NONE" ? "NO_RECORDING" : workflowStage === "UPLOADED" ? "UPLOADED" : "NEEDS_REVIEW",
-      recording: workflowStage === "NONE" ? null : { id: "recording-1", original_filename: "demo.wav", mime_type: "audio/wav", duration_ms: 9000, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
+      recording: workflowStage === "NONE" ? null : { id: "recording-1", original_filename: "demo.wav", mime_type: "audio/wav", duration_ms: 9000, audio_format: "PCM WAV", sample_rate_hz: 16000, channel_count: 1, sample_width_bits: 16, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
       latest_job: null,
       latest_revision: workflowStage === "READY" ? activeRevision : null,
       deletion: null,
@@ -287,7 +312,7 @@ describe("Phase 3A curriculum experience", () => {
     const resumeSummary = {
       context_version_id: "context-v2",
       state: "QUALITY_BLOCKED" as const,
-      recording: { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
+      recording: { id: "recording-1", original_filename: "photosynthesis-demo.wav", mime_type: "audio/wav", duration_ms: 19400, audio_format: "PCM WAV", sample_rate_hz: 16000, channel_count: 1, sample_width_bits: 16, source_status: "DEMO", created_at: "2026-07-16T09:00:00Z", content_url: "/api/v1/teacher/recordings/recording-1/content" },
       latest_job: { id: "job-1", status: "SUCCEEDED" as const, stage: "Transcript ready for teacher review", recoverable: false, error_code: null, message: null },
       latest_revision: {
         id: "revision-1", recording_id: "recording-1", revision_number: 1, copied_from_transcript_revision_id: null,
@@ -295,7 +320,7 @@ describe("Phase 3A curriculum experience", () => {
         provenance_label: "Deterministic offline demo transcript mapped to a team-recorded Malayalam/code-mixed lesson — not live STT.", teacher_review_status: "DRAFT" as const, approved_at: null,
         segments: [{ id: "segment-2", sequence: 2, start_ms: 7654, end_ms: 12988, text: "ഇലയിലെ chlorophil സൂര്യപ്രകാശം പിടിച്ചെടുക്കുന്നു." }],
         suggestions: [{ id: "suggestion-1", transcript_segment_id: "segment-2", glossary_term_id: "term-2", detected_text: "chlorophil", canonical_term: "Chlorophyll", malayalam_support_label: "ക്ലോറോഫിൽ", latest_decision: "CONFIRMED" as const }],
-        quality: { quality_status: "FAILED" as const, measured_coverage: 1, reasons: [{ reason_code: "unresolved_terms", severity: "BLOCKING", message_key: "quality.unresolved_terms", measured_value: 1, threshold: 0, recovery_action: "confirm_or_edit_term" }] },
+        quality: { quality_status: "FAILED" as const, measured_coverage: 1, reasons: [{ reason_code: "unresolved_terms", severity: "BLOCKING", message_key: "quality.unresolved_terms", measured_value: 1, threshold: 0, recovery_action: "confirm_or_edit_term" }] }, provenance_summary: null,
       },
       deletion: null,
       capabilities: { can_start_processing: false, can_retry_processing: false, can_enter_manual_transcript: true, can_edit_transcript: true, can_assess_quality: true, can_approve_transcript: false, can_remove_recording: true },

@@ -306,6 +306,21 @@ class LectureAudio(IdTimestampMixin, Base):
         UniqueConstraint("lesson_id", "sha256", name="uq_lecture_audio_lesson_sha256"),
         CheckConstraint("byte_size > 0", name="ck_lecture_audio_byte_size"),
         CheckConstraint("duration_ms > 0", name="ck_lecture_audio_duration_ms"),
+        CheckConstraint(
+            "sample_rate_hz IS NULL OR sample_rate_hz > 0",
+            name="ck_lecture_audio_sample_rate_hz",
+        ),
+        CheckConstraint(
+            "channel_count IS NULL OR channel_count > 0",
+            name="ck_lecture_audio_channel_count",
+        ),
+        CheckConstraint(
+            "sample_width_bits IS NULL OR sample_width_bits > 0",
+            name="ck_lecture_audio_sample_width_bits",
+        ),
+        CheckConstraint(
+            "frame_count IS NULL OR frame_count > 0", name="ck_lecture_audio_frame_count"
+        ),
     )
 
     lesson_id: Mapped[str] = mapped_column(
@@ -321,6 +336,11 @@ class LectureAudio(IdTimestampMixin, Base):
         String(64), default=lambda: (uuid4().hex * 2)[:64], nullable=False
     )
     duration_ms: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    audio_format: Mapped[str | None] = mapped_column(String(40))
+    sample_rate_hz: Mapped[int | None] = mapped_column(Integer)
+    channel_count: Mapped[int | None] = mapped_column(Integer)
+    sample_width_bits: Mapped[int | None] = mapped_column(Integer)
+    frame_count: Mapped[int | None] = mapped_column(Integer)
     source_status: Mapped[SourceStatus] = mapped_column(
         sqlite_enum(SourceStatus, "lecture_audio_source_status", 20), nullable=False
     )
@@ -450,9 +470,77 @@ class TranscriptRevision(IdTimestampMixin, Base):
     quality_assessments: Mapped[list[TranscriptQualityAssessment]] = relationship(
         back_populates="transcript_revision", cascade="all, delete-orphan", passive_deletes=True
     )
+    transcription_evidence: Mapped[TranscriptionRunEvidence | None] = relationship(
+        back_populates="transcript_revision",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
     artifacts: Mapped[list[GeneratedArtifact]] = relationship(
         back_populates="source_transcript_revision"
     )
+
+
+class TranscriptionRunEvidence(IdTimestampMixin, Base):
+    """Immutable native-provider evidence retained outside student projections."""
+
+    __tablename__ = "transcription_run_evidence"
+    __table_args__ = (
+        UniqueConstraint("transcript_revision_id", name="uq_transcription_evidence_revision"),
+        CheckConstraint("source_duration_ms > 0", name="ck_evidence_source_duration"),
+        CheckConstraint("beam_size > 0", name="ck_evidence_beam_size"),
+        CheckConstraint(
+            "model_load_seconds IS NULL OR model_load_seconds >= 0",
+            name="ck_evidence_model_load_seconds",
+        ),
+        CheckConstraint("inference_seconds >= 0", name="ck_evidence_inference_seconds"),
+        CheckConstraint(
+            "language_probability IS NULL OR "
+            "(language_probability >= 0 AND language_probability <= 1)",
+            name="ck_evidence_language_probability",
+        ),
+        Index("ix_transcription_evidence_source_sha256", "source_sha256"),
+    )
+
+    transcript_revision_id: Mapped[str] = mapped_column(
+        ForeignKey("transcript_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    source_lecture_audio_id: Mapped[str] = mapped_column(
+        ForeignKey("lecture_audio.id", ondelete="CASCADE"), nullable=False
+    )
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    provider_implementation: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider_version: Mapped[str | None] = mapped_column(String(100))
+    ctranslate2_version: Mapped[str | None] = mapped_column(String(100))
+    model_identifier: Mapped[str] = mapped_column(String(500), nullable=False)
+    device: Mapped[str] = mapped_column(String(40), nullable=False)
+    compute_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    language_requested: Mapped[str] = mapped_column(String(20), nullable=False)
+    language_detected: Mapped[str | None] = mapped_column(String(20))
+    language_probability: Mapped[float | None] = mapped_column(Float)
+    multilingual: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    beam_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    vad_filter: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    word_timestamps: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    transcription_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    transcription_completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    model_load_seconds: Mapped[float | None] = mapped_column(Float)
+    inference_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_provider_output_json: Mapped[str] = mapped_column(Text, nullable=False)
+    transcript_revision: Mapped[TranscriptRevision] = relationship(
+        back_populates="transcription_evidence"
+    )
+
+
+@event.listens_for(TranscriptionRunEvidence, "before_update")
+def _prevent_transcription_evidence_update(_mapper, _connection, _target) -> None:
+    raise ValueError("transcription_run_evidence_is_immutable")
 
 
 class TranscriptSegment(IdTimestampMixin, Base):

@@ -1,8 +1,8 @@
 # Shravya
 
-Shravya is a Malayalam-first inclusive learning platform for Classes 5–10. This repository contains the approved foundation, teacher-guided curriculum context, deterministic Photosynthesis fixture, and visible teacher/student judge flow.
+Shravya is a Malayalam-first inclusive learning platform for Classes 5–10. This repository contains the approved foundation, teacher-guided curriculum context, deterministic Photosynthesis fixture, local speech-recognition foundation, and visible teacher/student judge flow.
 
-It does not implement transcript processing, adaptive learning behaviour, generation, live providers, or a chatbot.
+It does not implement cloud STT, adaptive learning behaviour, generation, or a chatbot. Local transcription remains teacher-reviewed and is not presented as real-time or pre-benchmarked accuracy.
 
 ## Prerequisites
 
@@ -59,11 +59,29 @@ npm --prefix frontend run test:e2e:install
 - The migration is explicit and immutable. A lesson belongs only to a chapter, which belongs to a course-context version; this avoids a conflicting duplicate context reference on `Lesson`.
 - SQLite foreign keys are enabled. Owned children cascade on deletion; historical artifact transcript links become `NULL` when the referenced transcript is deleted.
 
-## Provider modes
+## Local transcription modes
 
-`SHRAVYA_PROVIDER_MODE` accepts `live`, `cached`, or `demo`. Phase 1 exposes configuration only; no paid or external provider is called.
+- `SHRAVYA_PROVIDER_MODE=deterministic_demo` is the default offline judge fixture. It maps only the bundled WAV and is visibly labelled “not live STT.” Unknown audio fails closed and requires manual entry.
+- `SHRAVYA_PROVIDER_MODE=local_faster_whisper` runs `faster-whisper==1.2.1` locally. The initial CPU defaults are `small`, `cpu`, `int8`, Malayalam (`ml`), beam size 5, VAD and word timestamps enabled. The first real request may download model weights; the automated suite never does.
 
-See [system overview](docs/architecture/system-overview.md) and [test strategy](docs/testing/test-strategy.md) for Phase 1 boundaries.
+The packaged audio decoder does not require a separately installed FFmpeg executable for this WAV-only proof. No classroom audio is sent to a cloud transcription service by this provider. Local processing still has ordinary device and storage risks, may take longer than the audio, and accuracy varies by speaker, language, noise, and selected model. Teacher review remains mandatory.
+
+Never commit classroom recordings, consent material, ground truth, or benchmark output. Use the gitignored `.runtime/audio/real-classroom-proof/` area for local evidence.
+
+### Local benchmark evidence
+
+From `backend`, run the same local provider used by the application:
+
+```powershell
+..\.venv\Scripts\python.exe -m scripts.benchmark_local_stt `
+  --audio ..\.runtime\audio\real-classroom-proof\recording.wav `
+  --reference-text-file ..\.runtime\audio\real-classroom-proof\reference.txt `
+  --terms-file ..\.runtime\audio\real-classroom-proof\terms.txt `
+  --model small --device cpu --compute-type int8 --language ml --multilingual `
+  --output-dir ..\.runtime\audio\real-classroom-proof\benchmark-output
+```
+
+The runner writes atomic `raw-transcript.txt`, `raw-provider-output.json`, `benchmark.json`, and `benchmark.csv` files. It reports raw STT metrics only; teacher-corrected text never contributes to WER, CER, or academic-term recall.
 ## Photosynthesis judge demo
 
 From `backend`, first migrate the configured database, then create or restore the deterministic baseline:

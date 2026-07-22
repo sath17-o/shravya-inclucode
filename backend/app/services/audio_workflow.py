@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import re
 import time
@@ -41,6 +40,7 @@ from app.models.foundation import (
     RecordingDeletionTombstone,
     TermDecision,
     TermSuggestion,
+    TranscriptionRunEvidence,
     TranscriptQualityAssessment,
     TranscriptQualityReason,
     TranscriptRevision,
@@ -50,7 +50,6 @@ from app.models.foundation import (
 from app.services.teacher_review import assert_context_mutable
 from app.services.transcript_provenance import (
     DETERMINISTIC_DEMO_PROVENANCE,
-    DETERMINISTIC_DEMO_PROVIDER,
     PHASE_3B_PROVIDER_VERSION,
     TEACHER_CORRECTED_DEMO_PROVENANCE,
     TEACHER_CORRECTED_PROVIDER,
@@ -61,6 +60,16 @@ from app.services.transcript_provenance import (
     recognised_provenance,
 )
 from app.services.transcript_quality import TranscriptQualityFinding, evaluate_transcript_quality
+from app.services.transcription_provider import (
+    DETERMINISTIC_DEMO_PROVIDER,
+    LOCAL_FASTER_WHISPER_PROVENANCE,
+    DeterministicDemoTranscriptionProvider,
+    ProviderTranscription,
+    TranscriptionInput,
+    TranscriptionProvider,
+    provider_for_settings,
+    raw_output_json,
+)
 
 _ALLOWED_MIME_TYPES = {"audio/wav", "audio/x-wav"}
 _FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
@@ -81,6 +90,44 @@ class DemoSegment:
     end_ms: int
     text: str
     sequence: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WavMetadata:
+    audio_format: str
+    sample_rate_hz: int
+    channel_count: int
+    sample_width_bits: int
+    frame_count: int
+    duration_ms: int
+
+
+def parse_wav_metadata(data: bytes) -> WavMetadata:
+    """Parse only standard WAV container metadata; callers retain typed file validation."""
+
+    try:
+        with wave.open(BytesIO(data), "rb") as wav:
+            frame_count = wav.getnframes()
+            sample_rate_hz = wav.getframerate()
+            metadata = WavMetadata(
+                audio_format="PCM" if wav.getcomptype() == "NONE" else wav.getcomptype(),
+                sample_rate_hz=sample_rate_hz,
+                channel_count=wav.getnchannels(),
+                sample_width_bits=wav.getsampwidth() * 8,
+                frame_count=frame_count,
+                duration_ms=round(frame_count / sample_rate_hz * 1000),
+            )
+    except (EOFError, wave.Error, ZeroDivisionError) as error:
+        raise DomainError("wav_parse_invalid", "audio.wav_parse_invalid", "validation") from error
+    if (
+        metadata.duration_ms <= 0
+        or metadata.sample_rate_hz <= 0
+        or metadata.channel_count <= 0
+        or metadata.sample_width_bits <= 0
+        or metadata.frame_count <= 0
+    ):
+        raise DomainError("wav_metadata_invalid", "audio.wav_metadata_invalid", "validation")
+    return metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,25 +155,6 @@ class AudioWorkflowSnapshot:
     capabilities: AudioWorkflowCapabilities
 
 
-class DeterministicDemoTranscriptionProvider:
-    """Maps only the committed demo asset; unknown audio is deliberately not transcribed."""
-
-    def __init__(self, manifest_path: Path) -> None:
-        self._manifest_path = manifest_path
-
-    def transcribe(self, sha256: str) -> tuple[DemoSegment, ...] | None:
-        manifest = self._manifest()
-        if sha256 != manifest["sha256"]:
-            return None
-        return tuple(DemoSegment(**segment) for segment in manifest["transcript_segments"])
-
-    def matches_fixture_sha(self, sha256: str) -> bool:
-        return sha256 == self._manifest()["sha256"]
-
-    def _manifest(self) -> dict[str, object]:
-        return json.loads(self._manifest_path.read_text(encoding="utf-8"))
-
-
 class AudioWorkflowService:
     def __init__(
         self,
@@ -134,6 +162,7 @@ class AudioWorkflowService:
         settings: Settings,
         now: Callable[[], datetime] = utcnow,
         session_factory: sessionmaker[Session] | None = None,
+        provider: TranscriptionProvider | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -141,7 +170,7 @@ class AudioWorkflowService:
         self._session_factory = session_factory or sessionmaker(
             bind=session.get_bind(), autocommit=False, autoflush=False
         )
-        self._provider = DeterministicDemoTranscriptionProvider(self._demo_manifest_path())
+        self._provider = provider or provider_for_settings(settings, self._demo_manifest_path())
 
     @staticmethod
     def _demo_manifest_path() -> Path:
@@ -153,7 +182,7 @@ class AudioWorkflowService:
         self._assert_context_mutable_for_lesson(lesson_id)
         self.recover_upload_intents()
         filename = self._sanitize_filename(upload.filename)
-        duration_ms = self._validate_wav(filename, upload.declared_mime_type, upload.data)
+        metadata = self._validate_wav(filename, upload.declared_mime_type, upload.data)
         sha256 = hashlib.sha256(upload.data).hexdigest()
         existing = self._session.scalar(
             select(LectureAudio).where(
@@ -179,10 +208,16 @@ class AudioWorkflowService:
             mime_type="audio/wav",
             byte_size=len(upload.data),
             sha256=sha256,
-            duration_ms=duration_ms,
+            duration_ms=metadata.duration_ms,
+            audio_format=metadata.audio_format,
+            sample_rate_hz=metadata.sample_rate_hz,
+            channel_count=metadata.channel_count,
+            sample_width_bits=metadata.sample_width_bits,
+            frame_count=metadata.frame_count,
             source_status=(
                 SourceStatus.DEMO
-                if self._provider.matches_fixture_sha(sha256)
+                if isinstance(self._provider, DeterministicDemoTranscriptionProvider)
+                and self._provider.matches_fixture_sha(sha256)
                 else SourceStatus.LOCAL_TEACHER
             ),
             workflow_status=RecordingWorkflowStatus.UPLOADED,
@@ -448,7 +483,7 @@ class AudioWorkflowService:
                 existing.error_code = None
                 existing.recoverable = None
                 existing.result_transcript_revision_id = None
-                existing.progress_message = "Queued for deterministic demo transcription"
+                existing.progress_message = self._queued_transcription_message()
                 existing.retry_count += 1
                 recording.workflow_status = RecordingWorkflowStatus.TRANSCRIBING
                 self._session.commit()
@@ -458,7 +493,7 @@ class AudioWorkflowService:
             job_type=ProcessingJobType.TRANSCRIPTION,
             entity_id=recording.id,
             status=JobStatus.QUEUED,
-            progress_message="Queued for deterministic demo transcription",
+            progress_message=self._queued_transcription_message(),
             retry_count=0,
         )
         recording.workflow_status = RecordingWorkflowStatus.TRANSCRIBING
@@ -476,10 +511,21 @@ class AudioWorkflowService:
         self._assert_context_mutable_for_lesson(recording.lesson_id)
         job.status = JobStatus.RUNNING
         job.started_at = self._now()
-        job.progress_message = "Running deterministic demo transcription"
+        job.progress_message = self._running_transcription_message()
         self._session.flush()
-        segments = self._provider.transcribe(recording.sha256)
-        if segments is None:
+        try:
+            result = self._provider.transcribe(
+                TranscriptionInput(
+                    source_sha256=recording.sha256,
+                    source_duration_ms=recording.duration_ms,
+                    audio_path=self._storage_path(recording, require_file=True),
+                )
+            )
+        except DomainError as error:
+            return self._fail_transcription_job(job, recording, error.code)
+        except Exception:
+            return self._fail_transcription_job(job, recording, "local_stt_inference_failed")
+        if result is None:
             job.status = JobStatus.FAILED
             job.completed_at = self._now()
             job.error_code = "demo_audio_unrecognized"
@@ -488,13 +534,35 @@ class AudioWorkflowService:
             recording.workflow_status = RecordingWorkflowStatus.MANUAL_TRANSCRIPT_REQUIRED
             self._session.commit()
             return job
-        revision = self._new_revision(
-            recording,
-            segments,
-            source_status=SourceStatus.DEMO,
-            provider_name=DETERMINISTIC_DEMO_PROVIDER,
-            provenance=DETERMINISTIC_DEMO_PROVENANCE,
-        )
+        try:
+            revision = self._new_revision(
+                recording,
+                tuple(
+                    DemoSegment(
+                        start_ms=item.start_ms,
+                        end_ms=item.end_ms,
+                        text=item.text,
+                        sequence=index,
+                    )
+                    for index, item in enumerate(result.segments, 1)
+                ),
+                source_status=(
+                    SourceStatus.DEMO
+                    if result.provider_implementation == DETERMINISTIC_DEMO_PROVIDER
+                    else SourceStatus.LOCAL_TEACHER
+                ),
+                provider_name=result.provider_implementation,
+                provider_version=result.provider_version,
+                provenance=self._provider_provenance(result),
+                evidence=(
+                    None
+                    if result.provider_implementation == DETERMINISTIC_DEMO_PROVIDER
+                    else result
+                ),
+            )
+        except Exception:
+            self._session.rollback()
+            return self._fail_transcription_job(job, recording, "local_stt_evidence_write_failed")
         job.status = JobStatus.SUCCEEDED
         job.completed_at = self._now()
         job.progress_message = "Transcript ready for teacher review"
@@ -686,7 +754,9 @@ class AudioWorkflowService:
         source_status: SourceStatus,
         provider_name: str,
         provenance: str,
+        provider_version: str | None = PHASE_3B_PROVIDER_VERSION,
         copied_from_id: str | None = None,
+        evidence: ProviderTranscription | None = None,
     ) -> TranscriptRevision:
         revision = TranscriptRevision(
             lecture_audio_id=recording.id,
@@ -704,7 +774,7 @@ class AudioWorkflowService:
             language="ml",
             copied_from_transcript_revision_id=copied_from_id,
             provider_name=provider_name,
-            provider_version=PHASE_3B_PROVIDER_VERSION,
+            provider_version=provider_version,
             provenance_label=provenance,
             teacher_review_status=TeacherReviewStatus.DRAFT,
         )
@@ -722,6 +792,34 @@ class AudioWorkflowService:
             self._session.add(item)
             self._session.flush()
             self._suggest_terms(item)
+        if evidence is not None:
+            self._session.add(
+                TranscriptionRunEvidence(
+                    transcript_revision_id=revision.id,
+                    source_lecture_audio_id=recording.id,
+                    source_sha256=recording.sha256,
+                    source_duration_ms=recording.duration_ms,
+                    provider_mode=evidence.provider_mode,
+                    provider_implementation=evidence.provider_implementation,
+                    provider_version=evidence.provider_version,
+                    ctranslate2_version=evidence.ctranslate2_version,
+                    model_identifier=evidence.model_identifier,
+                    device=evidence.device,
+                    compute_type=evidence.compute_type,
+                    language_requested=evidence.language_requested,
+                    language_detected=evidence.language_detected,
+                    language_probability=evidence.language_probability,
+                    multilingual=evidence.multilingual,
+                    beam_size=evidence.beam_size,
+                    vad_filter=evidence.vad_filter,
+                    word_timestamps=evidence.word_timestamps,
+                    transcription_started_at=evidence.transcription_started_at,
+                    transcription_completed_at=evidence.transcription_completed_at,
+                    model_load_seconds=evidence.model_load_seconds,
+                    inference_seconds=evidence.inference_seconds,
+                    raw_provider_output_json=raw_output_json(evidence),
+                )
+            )
         return revision
 
     def _suggest_terms(self, segment: TranscriptSegment) -> None:
@@ -1273,6 +1371,46 @@ class AudioWorkflowService:
             self._session.delete(assessment)
             self._session.flush()
 
+    def _queued_transcription_message(self) -> str:
+        return (
+            "Queued for deterministic demo transcription"
+            if isinstance(self._provider, DeterministicDemoTranscriptionProvider)
+            else "Queued for local speech recognition"
+        )
+
+    def _running_transcription_message(self) -> str:
+        return (
+            "Running deterministic demo transcription"
+            if isinstance(self._provider, DeterministicDemoTranscriptionProvider)
+            else "Running local speech recognition"
+        )
+
+    @staticmethod
+    def _provider_provenance(result: ProviderTranscription) -> str:
+        return (
+            DETERMINISTIC_DEMO_PROVENANCE
+            if result.provider_implementation == DETERMINISTIC_DEMO_PROVIDER
+            else LOCAL_FASTER_WHISPER_PROVENANCE
+        )
+
+    def _fail_transcription_job(
+        self, job: ProcessingJob, recording: LectureAudio, error_code: str
+    ) -> ProcessingJob:
+        current_job = self._session.get(ProcessingJob, job.id)
+        current_recording = self._session.get(LectureAudio, recording.id)
+        if current_job is None or current_recording is None:
+            raise DomainError("job_not_found", "audio.job_not_found", "not_found")
+        current_job.status = JobStatus.FAILED
+        current_job.completed_at = self._now()
+        current_job.error_code = error_code
+        current_job.recoverable = True
+        current_job.progress_message = (
+            "Local transcription could not start; enter a transcript manually or try again."
+        )
+        current_recording.workflow_status = RecordingWorkflowStatus.MANUAL_TRANSCRIPT_REQUIRED
+        self._session.commit()
+        return current_job
+
     def _replace_assessment(self, revision: TranscriptRevision) -> TranscriptQualityAssessment:
         self._invalidate_assessment(revision)
         latest = self._latest_revision(revision.lecture_audio_id)
@@ -1424,7 +1562,7 @@ class AudioWorkflowService:
                 start_ms, end_ms = next_start, next_end
         return (covered_ms + end_ms - start_ms) / duration_ms
 
-    def _validate_wav(self, filename: str, mime_type: str, data: bytes) -> int:
+    def _validate_wav(self, filename: str, mime_type: str, data: bytes) -> WavMetadata:
         if not filename.lower().endswith(".wav"):
             raise DomainError(
                 "wav_extension_required", "audio.wav_extension_required", "validation"
@@ -1435,16 +1573,7 @@ class AudioWorkflowService:
             raise DomainError("wav_size_invalid", "audio.wav_size_invalid", "validation")
         if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
             raise DomainError("wav_magic_invalid", "audio.wav_magic_invalid", "validation")
-        try:
-            with wave.open(BytesIO(data), "rb") as wav:
-                duration_ms = round(wav.getnframes() / wav.getframerate() * 1000)
-        except (EOFError, wave.Error, ZeroDivisionError) as error:
-            raise DomainError(
-                "wav_parse_invalid", "audio.wav_parse_invalid", "validation"
-            ) from error
-        if duration_ms <= 0:
-            raise DomainError("wav_duration_invalid", "audio.wav_duration_invalid", "validation")
-        return duration_ms
+        return parse_wav_metadata(data)
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:

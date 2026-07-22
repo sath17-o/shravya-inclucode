@@ -226,6 +226,11 @@ def recording_response(recording):
         byte_size=recording.byte_size,
         sha256=recording.sha256,
         duration_ms=recording.duration_ms,
+        audio_format=recording.audio_format,
+        sample_rate_hz=recording.sample_rate_hz,
+        channel_count=recording.channel_count,
+        sample_width_bits=recording.sample_width_bits,
+        frame_count=recording.frame_count,
         source_status=recording.source_status,
         workflow_status=recording.workflow_status,
     )
@@ -251,6 +256,7 @@ def transcript_response(revision):
         suggestion for segment in revision.segments for suggestion in segment.term_suggestions
     ]
     glossary_by_id = {item.id: item for item in revision.lecture_audio.lesson.glossary_terms}
+    evidence = revision.transcription_evidence
     return TranscriptRevisionResponse(
         id=revision.id,
         recording_id=revision.lecture_audio_id,
@@ -307,6 +313,19 @@ def transcript_response(revision):
         )
         if assessment
         else None,
+        provenance_summary=(
+            TranscriptProvenanceSummaryResponse(
+                mode=evidence.provider_mode,
+                provider_implementation=evidence.provider_implementation,
+                model_identifier=evidence.model_identifier,
+                device=evidence.device,
+                language_detected=evidence.language_detected,
+                inference_seconds=evidence.inference_seconds,
+                local_only=evidence.provider_mode == "local_faster_whisper",
+            )
+            if evidence is not None
+            else None
+        ),
     )
 
 
@@ -350,6 +369,10 @@ def audio_workflow_summary_response(snapshot):
                 original_filename=snapshot.recording.original_filename,
                 mime_type=snapshot.recording.mime_type,
                 duration_ms=snapshot.recording.duration_ms,
+                audio_format=snapshot.recording.audio_format,
+                sample_rate_hz=snapshot.recording.sample_rate_hz,
+                channel_count=snapshot.recording.channel_count,
+                sample_width_bits=snapshot.recording.sample_width_bits,
                 source_status=snapshot.recording.source_status,
                 created_at=snapshot.recording.created_at,
                 content_url=f"/api/v1/teacher/recordings/{snapshot.recording.id}/content",
@@ -367,6 +390,12 @@ def audio_workflow_summary_response(snapshot):
                 message=(
                     "No offline demo transcript is available for this recording."
                     if snapshot.job.error_code == "demo_audio_unrecognized"
+                    else (
+                        "The local speech model is not available yet. "
+                        "Enter a transcript manually or try again."
+                    )
+                    if snapshot.job.error_code
+                    in {"local_stt_dependency_unavailable", "local_stt_model_load_failed"}
                     else "Transcription needs teacher attention."
                     if snapshot.job.status in {JobStatus.FAILED, JobStatus.CANCELLED}
                     else None

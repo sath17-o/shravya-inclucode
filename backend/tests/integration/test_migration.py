@@ -319,6 +319,72 @@ def test_migrated_schema_matches_metadata_and_persists_concept_state_values(tmp_
     engine.dispose()
 
 
+def test_phase_4c_local_stt_evidence_migration_lifecycle(tmp_path) -> None:
+    database_path = tmp_path / "local-stt-evidence.db"
+    config = migration_config(database_path)
+
+    command.upgrade(config, "20260721_0004")
+    inspector = inspect(create_engine(f"sqlite:///{database_path.as_posix()}"))
+    assert "transcription_run_evidence" not in inspector.get_table_names()
+    assert "audio_format" not in {
+        column["name"] for column in inspector.get_columns("lecture_audio")
+    }
+
+    command.upgrade(config, "20260723_0005")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    inspector = inspect(engine)
+    assert "transcription_run_evidence" in inspector.get_table_names()
+    assert {
+        "source_sha256",
+        "model_identifier",
+        "raw_provider_output_json",
+        "inference_seconds",
+    } <= {column["name"] for column in inspector.get_columns("transcription_run_evidence")}
+    assert {
+        "audio_format",
+        "sample_rate_hz",
+        "channel_count",
+        "sample_width_bits",
+        "frame_count",
+    } <= {column["name"] for column in inspector.get_columns("lecture_audio")}
+    assert "ix_transcription_evidence_source_sha256" in {
+        index["name"] for index in inspector.get_indexes("transcription_run_evidence")
+    }
+    assert {
+        ("transcript_revision_id", "transcript_revisions", "CASCADE"),
+        ("source_lecture_audio_id", "lecture_audio", "CASCADE"),
+    } <= {
+        (
+            foreign_key["constrained_columns"][0],
+            foreign_key["referred_table"],
+            foreign_key["options"].get("ondelete"),
+        )
+        for foreign_key in inspector.get_foreign_keys("transcription_run_evidence")
+    }
+    with engine.connect() as connection:
+        migration_context = MigrationContext.configure(connection)
+        assert compare_metadata(migration_context, Base.metadata) == []
+    engine.dispose()
+
+    command.downgrade(config, "20260721_0004")
+    inspector = inspect(create_engine(f"sqlite:///{database_path.as_posix()}"))
+    assert "transcription_run_evidence" not in inspector.get_table_names()
+    assert "audio_format" not in {
+        column["name"] for column in inspector.get_columns("lecture_audio")
+    }
+
+    command.upgrade(config, "20260723_0005")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    with engine.connect() as connection:
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM transcription_run_evidence")).scalar_one()
+            == 0
+        )
+        migration_context = MigrationContext.configure(connection)
+        assert compare_metadata(migration_context, Base.metadata) == []
+    engine.dispose()
+
+
 def test_phase_4b2a_recovery_pack_migration_enforces_context_owned_concepts(tmp_path) -> None:
     database_path = tmp_path / "recovery-packs.db"
     config = migration_config(database_path)

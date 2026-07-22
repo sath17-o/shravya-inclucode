@@ -7,6 +7,6 @@ def test_health_returns_typed_success_contract(client) -> None:
         "data": {
             "service": "shravya-backend",
             "environment": "development",
-            "provider_mode": "demo",
+            "provider_mode": "deterministic_demo",
         },
     }

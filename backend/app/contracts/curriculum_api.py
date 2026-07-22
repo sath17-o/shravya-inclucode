@@ -290,6 +290,11 @@ class RecordingResponse(BaseModel):
     byte_size: int
     sha256: str
     duration_ms: int
+    audio_format: str | None = None
+    sample_rate_hz: int | None = None
+    channel_count: int | None = None
+    sample_width_bits: int | None = None
+    frame_count: int | None = None
     source_status: SourceStatus
     workflow_status: RecordingWorkflowStatus
 
@@ -340,6 +345,16 @@ class TranscriptQualityResponse(BaseModel):
     reasons: list[QualityReasonResponse] = Field(default_factory=list)
 
 
+class TranscriptProvenanceSummaryResponse(BaseModel):
+    mode: str
+    provider_implementation: str
+    model_identifier: str | None = None
+    device: str | None = None
+    language_detected: str | None = None
+    inference_seconds: float | None = None
+    local_only: bool = False
+
+
 class TranscriptRevisionResponse(BaseModel):
     id: str
     recording_id: str
@@ -354,6 +369,7 @@ class TranscriptRevisionResponse(BaseModel):
     segments: list[TranscriptSegmentResponse] = Field(default_factory=list)
     suggestions: list[TermSuggestionResponse] = Field(default_factory=list)
     quality: TranscriptQualityResponse | None = None
+    provenance_summary: TranscriptProvenanceSummaryResponse | None = None
 
 
 AudioWorkflowState = Literal[
@@ -376,6 +392,10 @@ class AudioWorkflowRecordingResponse(BaseModel):
     original_filename: str
     mime_type: str
     duration_ms: int
+    audio_format: str | None = None
+    sample_rate_hz: int | None = None
+    channel_count: int | None = None
+    sample_width_bits: int | None = None
     source_status: SourceStatus
     created_at: datetime
     content_url: str

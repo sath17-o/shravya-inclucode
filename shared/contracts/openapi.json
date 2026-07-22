@@ -226,6 +226,28 @@
       },
       "AudioWorkflowRecordingResponse": {
         "properties": {
+          "audio_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Format"
+          },
+          "channel_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Count"
+          },
           "content_url": {
             "title": "Content Url",
             "type": "string"
@@ -250,6 +272,28 @@
           "original_filename": {
             "title": "Original Filename",
             "type": "string"
+          },
+          "sample_rate_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate Hz"
+          },
+          "sample_width_bits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Width Bits"
           },
           "source_status": {
             "$ref": "#/components/schemas/SourceStatus"
@@ -1301,13 +1345,46 @@
       },
       "RecordingResponse": {
         "properties": {
+          "audio_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Format"
+          },
           "byte_size": {
             "title": "Byte Size",
             "type": "integer"
           },
+          "channel_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Count"
+          },
           "duration_ms": {
             "title": "Duration Ms",
             "type": "integer"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
           },
           "id": {
             "title": "Id",
@@ -1324,6 +1401,28 @@
           "original_filename": {
             "title": "Original Filename",
             "type": "string"
+          },
+          "sample_rate_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate Hz"
+          },
+          "sample_width_bits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Width Bits"
           },
           "sha256": {
             "title": "Sha256",
@@ -2494,6 +2593,73 @@
         "title": "TranscriptManualRevisionRequest",
         "type": "object"
       },
+      "TranscriptProvenanceSummaryResponse": {
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "inference_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Seconds"
+          },
+          "language_detected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Detected"
+          },
+          "local_only": {
+            "default": false,
+            "title": "Local Only",
+            "type": "boolean"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "model_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Identifier"
+          },
+          "provider_implementation": {
+            "title": "Provider Implementation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "provider_implementation"
+        ],
+        "title": "TranscriptProvenanceSummaryResponse",
+        "type": "object"
+      },
       "TranscriptQualityResponse": {
         "properties": {
           "measured_coverage": {
@@ -2556,6 +2722,16 @@
           "provenance_label": {
             "title": "Provenance Label",
             "type": "string"
+          },
+          "provenance_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranscriptProvenanceSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "provider_name": {
             "title": "Provider Name",

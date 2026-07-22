@@ -8,7 +8,7 @@ from app.core.config import Settings, get_settings
 
 def test_settings_load_all_supported_environment_values(monkeypatch) -> None:
     monkeypatch.setenv("SHRAVYA_ENVIRONMENT", "test")
-    monkeypatch.setenv("SHRAVYA_PROVIDER_MODE", "cached")
+    monkeypatch.setenv("SHRAVYA_PROVIDER_MODE", "demo")
     monkeypatch.setenv("SHRAVYA_DATABASE_URL", "sqlite:///./configured.db")
     monkeypatch.setenv("SHRAVYA_CORS_ORIGINS", "http://one.test,http://two.test")
     get_settings.cache_clear()
@@ -16,7 +16,7 @@ def test_settings_load_all_supported_environment_values(monkeypatch) -> None:
     settings = get_settings()
 
     assert settings.environment == "test"
-    assert settings.provider_mode.value == "cached"
+    assert settings.provider_mode.value == "deterministic_demo"
     assert settings.database_url == "sqlite:///./configured.db"
     assert settings.cors_origins == ["http://one.test", "http://two.test"]
 

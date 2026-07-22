@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 from app.contracts.enums import SourceStatus
 from app.models.foundation import TranscriptRevision
+from app.services.transcription_provider import (
+    LOCAL_FASTER_WHISPER_PROVENANCE,
+    LOCAL_FASTER_WHISPER_PROVIDER,
+)
 
 PHASE_3B_PROVIDER_VERSION = "phase-3b"
 DETERMINISTIC_DEMO_PROVIDER = "shravya-deterministic-demo"
@@ -33,6 +37,14 @@ def recognised_provenance(revision: TranscriptRevision) -> ProvenancePolicyResul
     version = (revision.provider_version or "").strip()
     label = revision.provenance_label.strip()
 
+    if (
+        revision.source_status is SourceStatus.LOCAL_TEACHER
+        and provider == LOCAL_FASTER_WHISPER_PROVIDER
+        and bool(version)
+        and label == LOCAL_FASTER_WHISPER_PROVENANCE
+        and revision.copied_from_transcript_revision_id is None
+    ):
+        return ProvenancePolicyResult(True)
     if (
         revision.source_status is SourceStatus.DEMO
         and provider == DETERMINISTIC_DEMO_PROVIDER

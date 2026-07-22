@@ -129,30 +129,46 @@ p { max-inline-size: 75ch; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .approved-transcript { border-color: #75a98d; }
 .glossary-link { color: #124f8c; font-weight: 850; text-decoration-thickness: 2px; }
-.focus-journey { display: grid; gap: 1rem; max-width: 48rem; margin: 0 auto; }
-.focus-journey-header, .focus-step-card { display: grid; gap: 0.9rem; padding: clamp(1.2rem, 3vw, 2rem); background: #fff; border: 1px solid #c7d5ce; border-radius: 1rem; box-shadow: 0 7px 24px rgb(31 74 64 / 7%); }
+.focus-journey-active .site-header, .focus-journey-active .primary-nav { display: none; }
+.focus-journey-active main { width: min(100% - 2rem, 54rem); padding: 0.75rem 0 2rem; }
+.focus-journey { display: grid; gap: 0.65rem; max-width: 52rem; margin: 0 auto; }
+.focus-journey-header, .focus-step-card { display: grid; gap: 0.5rem; padding: clamp(0.8rem, 1.4vw, 1rem); background: #fff; border: 1px solid #c7d5ce; border-radius: 0.8rem; box-shadow: 0 5px 16px rgb(31 74 64 / 6%); }
 .focus-journey-header { background: #edf6f0; border-color: #92c1a5; }
+.focus-compact-header { grid-template-columns: auto 1fr; align-items: center; column-gap: 1rem; }
+.focus-journey-identity { display: inline-flex; align-items: baseline; gap: 0.5rem; margin: 0; color: #214a40; font-size: 0.9rem; }
+.focus-journey-identity strong { font-size: 1.05rem; letter-spacing: -0.02em; }
+.focus-journey-identity span { color: #42665c; font-weight: 750; }
 .focus-journey-header p, .focus-step-card p { margin: 0; }
 .focus-progress-copy { color: #1d4e42; font-weight: 850; }
-.focus-progress { width: 100%; height: 0.8rem; overflow: hidden; background: #d3e3d9; border-radius: 999px; }
+.focus-compact-header .focus-progress-copy { justify-self: end; }
+.focus-compact-header .focus-progress { grid-column: 1 / -1; }
+.focus-progress { width: 100%; height: 0.55rem; overflow: hidden; background: #d3e3d9; border-radius: 999px; }
 .focus-progress span { display: block; height: 100%; background: #2f6559; border-radius: inherit; }
-.focus-malayalam { color: #28594d; font-size: clamp(1.15rem, 2.5vw, 1.45rem); font-weight: 800; }
-.focus-explanation { max-inline-size: 60ch; font-size: 1.08em; }
-.focus-terms { display: grid; gap: 0.55rem; padding: 1rem; background: #f5f8f6; border-left: 4px solid #568c73; border-radius: 0.55rem; }
+.focus-journey h1 { font-size: clamp(1.65rem, 3vw, 2.25rem); }
+.focus-malayalam { color: #28594d; font-size: clamp(1.05rem, 2vw, 1.28rem); font-weight: 800; }
+.focus-explanation { max-inline-size: 60ch; font-size: 1em; }
+.focus-terms { display: grid; gap: 0.45rem; padding: 0.75rem; background: #f5f8f6; border-left: 3px solid #568c73; border-radius: 0.5rem; }
 .focus-terms ul { display: flex; flex-wrap: wrap; gap: 0.55rem; margin: 0; padding: 0; list-style: none; }
 .focus-terms li { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.35rem 0.6rem; color: #234d41; background: #fff; border: 1px solid #b9d1c2; border-radius: 999px; }
-.focus-check { display: grid; gap: 0.65rem; padding: 1rem; margin: 0; border: 1px solid #9ebbaa; border-radius: 0.75rem; }
+.focus-check { display: grid; gap: 0.5rem; padding: 0.75rem; margin: 0; border: 1px solid #9ebbaa; border-radius: 0.65rem; }
 .focus-check legend { padding: 0 0.35rem; color: #17332d; font-weight: 850; }
 .focus-answer-option { display: flex; align-items: center; gap: 0.65rem; min-height: 2.75rem; padding: 0.55rem 0.7rem; background: #f8faf7; border: 1px solid #c5d7cd; border-radius: 0.55rem; cursor: pointer; }
 .focus-answer-option:has(input:checked) { background: #e8f3eb; border-color: #2f6559; }
 .focus-answer-option input { width: 1.2rem; height: 1.2rem; accent-color: #24584d; }
-.focus-feedback { padding: 0.8rem 1rem; border-left: 4px solid; border-radius: 0.5rem; font-weight: 750; }
+.focus-feedback { padding: 0.65rem 0.8rem; border-left: 4px solid; border-radius: 0.5rem; font-weight: 750; }
 .focus-feedback.correct { color: #164f38; background: #e6f6e9; border-color: #327a4c; }
 .focus-feedback.incorrect { color: #63451c; background: #fff5e1; border-color: #c89036; }
 .focus-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
-.focus-step-actions { padding-top: 0.25rem; border-top: 1px solid #d5dfd9; }
-.focus-restart { padding-top: 0.6rem; border-top: 1px solid #d5dfd9; }
-.focus-restart-confirm { display: grid; gap: 0.7rem; padding: 1rem; background: #fff7e8; border: 1px solid #d8b574; border-radius: 0.7rem; }
+.focus-primary-action { color: #fff; background: #24584d; border-color: #24584d; }
+.focus-primary-action:hover { background: #173f36; border-color: #173f36; }
+.focus-step-actions { justify-content: space-between; padding-top: 0.25rem; border-top: 1px solid #d5dfd9; }
+.focus-support-action { display: flex; justify-content: flex-start; }
+.focus-utility { display: grid; justify-items: start; gap: 0.35rem; padding-top: 0.2rem; border-top: 1px solid #d5dfd9; }
+.focus-utility-actions { display: grid; gap: 0.5rem; width: fit-content; min-width: min(100%, 15rem); }
+.focus-utility-normal { display: grid; gap: 0.4rem; }
+.focus-utility-normal .button, .focus-utility-restart .button { width: 100%; text-align: left; }
+.focus-utility-restart { padding-top: 0.6rem; margin-top: 0.1rem; border-top: 1px solid #d5dfd9; }
+.focus-restart-confirm { display: grid; gap: 0.6rem; max-width: 26rem; padding: 0.8rem; background: #fff7e8; border: 1px solid #d8b574; border-radius: 0.65rem; }
 .focus-paused, .focus-completion { max-width: 42rem; }
 .focus-support-options { display: grid; gap: 0.7rem; padding: 0; margin: 0; border: 0; }
 .focus-support-option { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.8rem; align-items: start; min-height: 2.75rem; padding: 0.8rem; background: #f8faf7; border: 2px solid #c5d7cd; border-radius: 0.7rem; cursor: pointer; }
@@ -163,17 +179,22 @@ p { max-inline-size: 75ch; }
 .focus-support-option small, .focus-preview-steps small { color: #365d52; font-size: 0.95rem; }
 .focus-reassurance { padding: 0.85rem 1rem; color: #214a40; background: #edf6f0; border-left: 4px solid #568c73; border-radius: 0.55rem; }
 .focus-selected-support { color: #1d4e42; font-size: 1.05rem; }
-.focus-preview-steps, .focus-preview-what { display: grid; gap: 0.65rem; padding: 1rem; background: #f5f8f6; border: 1px solid #c7d5ce; border-radius: 0.7rem; }
-.focus-preview-steps h2, .focus-preview-what h2 { margin: 0; font-size: 1.05rem; }
-.focus-preview-steps ol, .focus-preview-what ul { display: grid; gap: 0.6rem; padding-left: 1.35rem; margin: 0; }
+.focus-preview-card { gap: 0.85rem; }
+.focus-support-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.8rem; }
+.focus-preview-steps { display: grid; gap: 0.55rem; padding: 0.8rem; background: #f5f8f6; border: 1px solid #c7d5ce; border-radius: 0.65rem; }
+.focus-preview-steps h2 { margin: 0; font-size: 1.05rem; }
+.focus-preview-steps ol { display: grid; gap: 0.55rem; padding-left: 1.35rem; margin: 0; }
 .focus-preview-steps li::marker { color: #24584d; font-weight: 850; }
 .focus-preview-steps li > span { color: #1d4e42; font-size: 0.9rem; font-weight: 850; text-transform: uppercase; letter-spacing: 0.04em; }
+.focus-preview-expectation { color: #365d52; font-weight: 700; }
+.focus-text-action { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.35rem 0.15rem; color: #24584d; background: transparent; border: 0; border-radius: 0.4rem; cursor: pointer; font-weight: 800; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.focus-journey .button, .focus-journey .focus-text-action, .focus-journey .focus-answer-option { min-height: 44px; }
 .focus-secondary-action { color: #214a40; background: #fff; border-color: #4f866f; }
-.focus-recovery { display: grid; gap: 0.8rem; padding: 1rem; color: #17332d; background: #f6faf7; border: 2px solid #75a98d; border-radius: 0.75rem; }
+.focus-recovery { display: grid; gap: 0.7rem; padding: 0.8rem; color: #17332d; background: #f6faf7; border: 1px solid #75a98d; border-radius: 0.65rem; }
 .focus-recovery h2, .focus-recovery h3 { margin: 0; }
-.focus-recovery-card, .focus-recovery-words, .focus-recovery-flow { display: grid; gap: 0.65rem; padding: 1rem; margin: 0; background: #fff; border: 1px solid #b8d0c1; border-radius: 0.65rem; }
-.focus-recovery-card { font-size: 1.05rem; line-height: 1.75; }
-.focus-recovery-card p { margin: 0; }
+.focus-recovery-current, .focus-recovery-words, .focus-recovery-flow { display: grid; gap: 0.6rem; padding: 0.65rem 0; margin: 0; background: transparent; border: 0; }
+.focus-recovery-current { font-size: 1.03rem; line-height: 1.75; }
+.focus-recovery-current p { margin: 0; }
 .focus-recovery-words { list-style: none; }
 .focus-recovery-words li { padding: 0.65rem 0.75rem; background: #f5f8f6; border: 1px solid #c7d8ce; border-radius: 0.55rem; line-height: 1.8; }
 .focus-recovery-words.priority li { font-size: 1.08rem; font-weight: 800; }
@@ -205,6 +226,25 @@ p { max-inline-size: 75ch; }
   .transcript-segments li { grid-template-columns: 1fr; }
   .workflow-timeline { grid-template-columns: 1fr; }
   .segment-fields { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 60rem) and (max-height: 47.5rem) {
+  .focus-journey-active main { padding: 0.3rem 0 0.5rem; }
+  .focus-journey-concept { gap: 0.35rem; }
+  .focus-journey-concept .focus-journey-header, .focus-journey-concept .focus-step-card { gap: 0.35rem; padding: 0.55rem; }
+  .focus-journey-concept .focus-compact-header { column-gap: 0.7rem; }
+  .focus-journey-concept h1 { font-size: 1.75rem; line-height: 1.1; }
+  .focus-journey-concept .focus-malayalam { font-size: 1.05rem; line-height: 1.35; }
+  .focus-journey-concept .focus-explanation { line-height: 1.4; }
+  .focus-journey-concept .focus-terms { gap: 0.25rem; padding: 0.4rem; }
+  .focus-journey-concept .focus-terms h2 { font-size: 1rem; }
+  .focus-journey-concept .focus-terms ul { gap: 0.3rem; }
+  .focus-journey-concept .focus-terms li { padding: 0.2rem 0.45rem; }
+  .focus-journey-concept .focus-check { gap: 0.3rem; padding: 0.45rem; }
+  .focus-journey-concept .focus-check legend { font-size: 0.95rem; line-height: 1.35; }
+  .focus-journey-concept .focus-answer-option { padding-block: 0.25rem; }
+  .focus-journey-concept .focus-step-actions { padding-top: 0; }
+  .focus-journey-concept .focus-utility { gap: 0; padding-top: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

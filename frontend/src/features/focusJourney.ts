@@ -1,9 +1,14 @@
 import type { Concept, GlossaryTerm, Lesson, StudentOverview } from "../api/contracts";
 
 export const FOCUS_JOURNEY_PATHWAY = "focus";
-export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 4;
+export const FOCUS_JOURNEY_PROGRESS_SCHEMA = 5;
 
 export type FocusSupportMode =
+  | "one_step_at_a_time"
+  | "help_with_words"
+  | "choose_support";
+
+type LegacyFocusSupportMode =
   | "less_at_once"
   | "clear_path"
   | "word_support"
@@ -26,11 +31,9 @@ export const FOCUS_SUPPORT_OPTIONS: ReadonlyArray<{
   label: string;
   description: string;
 }> = [
-  { mode: "less_at_once", label: "Less at once", description: "Show one short idea at a time." },
-  { mode: "clear_path", label: "A clear path", description: "Show what I am doing now and what comes next." },
-  { mode: "word_support", label: "Help with words", description: "Make difficult words clear in Malayalam and English." },
-  { mode: "examples", label: "Examples when needed", description: "Show a concrete example when an idea feels unclear." },
-  { mode: "choose_as_i_go", label: "Let me choose as I go", description: "Keep every kind of support available during the lesson." },
+  { mode: "one_step_at_a_time", label: "One step at a time", description: "Show one clear step and one support at a time." },
+  { mode: "help_with_words", label: "Help with words", description: "Make important Malayalam and English words clear." },
+  { mode: "choose_support", label: "Let me choose support", description: "Let me choose a cue, example or explanation when I need it." },
 ];
 
 export type FocusJourneyProgress = {
@@ -151,6 +154,19 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return Boolean(value && typeof value === "object") && Object.values(value as Record<string, unknown>).every((item) => typeof item === "string");
 }
 
+function migratedSupportMode(value: unknown): FocusSupportMode | null | undefined {
+  if (value === null) return null;
+  if (FOCUS_SUPPORT_OPTIONS.some((option) => option.mode === value)) return value as FocusSupportMode;
+  const legacy: Record<LegacyFocusSupportMode, FocusSupportMode> = {
+    less_at_once: "one_step_at_a_time",
+    clear_path: "one_step_at_a_time",
+    word_support: "help_with_words",
+    examples: "choose_support",
+    choose_as_i_go: "choose_support",
+  };
+  return typeof value === "string" && value in legacy ? legacy[value as LegacyFocusSupportMode] : undefined;
+}
+
 function isValidRecoveryRecord(value: unknown, steps: FocusJourneyStep[]): value is Record<string, FocusRecoveryProgress> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const stepIds = new Set(steps.map((step) => step.id));
@@ -211,15 +227,35 @@ function isValidProgress(value: unknown, journeyKey: string, steps: FocusJourney
   return progress.isComplete || (progress.currentStepIndex ?? 0) <= firstIncomplete;
 }
 
+function migrateProgress(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const candidate = value as Partial<FocusJourneyProgress>;
+  if (candidate.schemaVersion === FOCUS_JOURNEY_PROGRESS_SCHEMA) return value;
+  if (candidate.schemaVersion !== 4) return value;
+  const supportMode = migratedSupportMode(candidate.supportMode);
+  if (supportMode === undefined) return value;
+  return {
+    ...candidate,
+    schemaVersion: FOCUS_JOURNEY_PROGRESS_SCHEMA,
+    supportMode,
+  };
+}
+
 export function readFocusJourneyProgress(journeyKey: string, steps: FocusJourneyStep[]): FocusJourneyStorageResult {
   const fresh = newFocusJourneyProgress(journeyKey);
   const storage = safeStorage();
   if (!storage) return { progress: fresh, hasValidProgress: false, persistenceAvailable: false };
   try {
     const parsed: unknown = JSON.parse(storage.getItem(journeyKey) ?? "null");
-    return isValidProgress(parsed, journeyKey, steps)
-      ? { progress: parsed, hasValidProgress: true, persistenceAvailable: true }
-      : { progress: fresh, hasValidProgress: false, persistenceAvailable: true };
+    const migrated = migrateProgress(parsed);
+    if (isValidProgress(migrated, journeyKey, steps)) {
+      const needsWrite = parsed !== migrated;
+      if (needsWrite && !saveFocusJourneyProgress(journeyKey, migrated)) {
+        return { progress: migrated, hasValidProgress: true, persistenceAvailable: false };
+      }
+      return { progress: migrated, hasValidProgress: true, persistenceAvailable: true };
+    }
+    return { progress: fresh, hasValidProgress: false, persistenceAvailable: true };
   } catch {
     return { progress: fresh, hasValidProgress: false, persistenceAvailable: false };
   }

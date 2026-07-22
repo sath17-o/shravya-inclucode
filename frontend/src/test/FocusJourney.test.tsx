@@ -15,11 +15,9 @@ import { course, createCurriculumFetch, focusLessonFixture, v1 } from "./curricu
 
 const nativeLocalStorage = window.localStorage;
 const supportNames = {
-  lessAtOnce: /Less at once\s+Show one short idea at a time\./,
-  clearPath: /A clear path\s+Show what I am doing now and what comes next\./,
-  wordSupport: /Help with words\s+Make difficult words clear in Malayalam and English\./,
-  examples: /Examples when needed\s+Show a concrete example when an idea feels unclear\./,
-  chooseAsIGo: /Let me choose as I go\s+Keep every kind of support available during the lesson\./,
+  oneStep: /One step at a time\s+Show one clear step and one support at a time\./,
+  helpWithWords: /Help with words\s+Make important Malayalam and English words clear\./,
+  chooseSupport: /Let me choose support\s+Let me choose a cue, example or explanation when I need it\./,
 };
 
 function withApprovedRecoverySupport(lesson: StudentLesson): StudentLesson {
@@ -45,7 +43,7 @@ function renderApp(path: "/student" | "/student/focus" | "/teacher", fetchMock =
   return render(<MemoryRouter initialEntries={[path]}><AppProvider><App /></AppProvider></MemoryRouter>);
 }
 
-async function selectSupport(user: ReturnType<typeof userEvent.setup>, label = supportNames.lessAtOnce) {
+async function selectSupport(user: ReturnType<typeof userEvent.setup>, label = supportNames.oneStep) {
   await user.click(await screen.findByRole("radio", { name: label }));
   await user.click(screen.getByRole("button", { name: "Continue with this support" }));
   await screen.findByRole("button", { name: "Start with step 1" });
@@ -79,43 +77,74 @@ describe("Phase 4 Focus Journey", () => {
     expect(screen.getByRole("button", { name: "Start Focus Journey" })).toBeInTheDocument();
   });
 
-  it("opens support choice first with five accessible single-select options", async () => {
+  it("opens support choice first with three accessible single-select options", async () => {
     renderApp("/student/focus", recoveryFetch());
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
     expect(screen.getByText("FOCUS JOURNEY")).toBeInTheDocument();
-    expect(screen.getByText("Show one short idea at a time.")).toBeInTheDocument();
-    expect(screen.getByText("Show what I am doing now and what comes next.")).toBeInTheDocument();
-    expect(screen.getByText("Make difficult words clear in Malayalam and English.")).toBeInTheDocument();
-    expect(screen.getByText("Show a concrete example when an idea feels unclear.")).toBeInTheDocument();
-    expect(screen.getByText("Keep every kind of support available during the lesson.")).toBeInTheDocument();
-    expect(screen.getAllByRole("radio")).toHaveLength(5);
+    expect(screen.getByText("Show one clear step and one support at a time.")).toBeInTheDocument();
+    expect(screen.getByText("Make important Malayalam and English words clear.")).toBeInTheDocument();
+    expect(screen.getByText("Let me choose a cue, example or explanation when I need it.")).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
     const radios = screen.getAllByRole("radio");
-    expect(radios[0]).toHaveAccessibleName(supportNames.lessAtOnce);
-    expect(radios[1]).toHaveAccessibleName(supportNames.clearPath);
-    expect(radios[2]).toHaveAccessibleName(supportNames.wordSupport);
-    expect(radios[3]).toHaveAccessibleName(supportNames.examples);
-    expect(radios[4]).toHaveAccessibleName(supportNames.chooseAsIGo);
+    expect(radios[0]).toHaveAccessibleName(supportNames.oneStep);
+    expect(radios[1]).toHaveAccessibleName(supportNames.helpWithWords);
+    expect(radios[2]).toHaveAccessibleName(supportNames.chooseSupport);
     expect(radios.every((radio) => !radio.hasAttribute("aria-label"))).toBe(true);
     expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
     expect(screen.queryByText(/ADHD|autism|dyslexia|disability|medical profile/i)).not.toBeInTheDocument();
   });
 
-  it("selects exactly one support and previews trusted Now, Next, and Later steps", async () => {
+  it("selects exactly one support and previews trusted Now and Next steps before later steps are requested", async () => {
     const user = userEvent.setup();
     renderApp("/student/focus");
-    await user.click(await screen.findByRole("radio", { name: supportNames.clearPath }));
-    expect(screen.getByRole("radio", { name: supportNames.clearPath })).toBeChecked();
-    expect(screen.getByRole("radio", { name: supportNames.lessAtOnce })).not.toBeChecked();
+    await user.click(await screen.findByRole("radio", { name: supportNames.oneStep }));
+    expect(screen.getByRole("radio", { name: supportNames.oneStep })).toBeChecked();
+    expect(screen.getByRole("radio", { name: supportNames.helpWithWords })).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
-    expect(await screen.findByText("Support: A clear path")).toBeInTheDocument();
+    expect(await screen.findByText("Support: One step at a time")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start with step 1" })).toHaveClass("focus-primary-action");
+    expect(screen.getByRole("button", { name: "Change" })).toHaveClass("focus-text-action");
     expect(screen.getByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
     expect(screen.getByText("Now")).toBeInTheDocument();
     expect(screen.getByText("Next")).toBeInTheDocument();
-    expect(screen.getAllByText("Later")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "See 3 later steps" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Making glucose")).not.toBeInTheDocument();
     expect(screen.getByText("What plants need")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Change support" }));
+    await user.click(screen.getByRole("button", { name: "See 3 later steps" }));
+    expect(screen.getByRole("button", { name: "Hide later steps" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByText("Later")).toHaveLength(3);
+    expect(screen.getByText("Making glucose")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide later steps" }));
+    expect(screen.getByRole("button", { name: "See 3 later steps" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Making glucose")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change" }));
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: supportNames.clearPath })).toBeChecked();
+    expect(screen.getByRole("radio", { name: supportNames.oneStep })).toBeChecked();
+  });
+
+  it("migrates every valid Phase 4B.2B support mode to a current canonical mode", () => {
+    const journeyKey = `shravya:focus:${course.id}:${v1}:v1`;
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    const mappings = {
+      less_at_once: "one_step_at_a_time",
+      clear_path: "one_step_at_a_time",
+      word_support: "help_with_words",
+      examples: "choose_support",
+      choose_as_i_go: "choose_support",
+    };
+    for (const [legacyMode, expectedMode] of Object.entries(mappings)) {
+      const legacy = { ...newFocusJourneyProgress(journeyKey), schemaVersion: 4, supportMode: legacyMode, screen: "journey-preview" };
+      window.localStorage.setItem(journeyKey, JSON.stringify(legacy));
+      expect(readFocusJourneyProgress(journeyKey, steps)).toMatchObject({ hasValidProgress: true, progress: { schemaVersion: 5, supportMode: expectedMode } });
+      expect(JSON.parse(window.localStorage.getItem(journeyKey)!).supportMode).toBe(expectedMode);
+    }
+  });
+
+  it("resets malformed legacy support state instead of preserving it", () => {
+    const journeyKey = `shravya:focus:${course.id}:${v1}:v1`;
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    window.localStorage.setItem(journeyKey, JSON.stringify({ ...newFocusJourneyProgress(journeyKey), schemaVersion: 4, supportMode: "unknown_mode", screen: "journey-preview" }));
+    expect(readFocusJourneyProgress(journeyKey, steps)).toMatchObject({ hasValidProgress: false, progress: { supportMode: null, screen: "support-choice" } });
   });
 
   it("derives preview names and ordering from the approved lesson", async () => {
@@ -129,9 +158,14 @@ describe("Phase 4 Focus Journey", () => {
         })),
       }),
     }));
-    await user.click(await screen.findByRole("radio", { name: supportNames.lessAtOnce }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.oneStep }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     const preview = screen.getByRole("heading", { name: "5 small steps" }).closest("section");
+    expect(within(preview!).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("NowApproved preview 1"),
+      expect.stringContaining("NextApproved preview 2"),
+    ]);
+    await user.click(screen.getByRole("button", { name: "See 3 later steps" }));
     expect(within(preview!).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
       expect.stringContaining("NowApproved preview 1"),
       expect.stringContaining("NextApproved preview 2"),
@@ -139,13 +173,15 @@ describe("Phase 4 Focus Journey", () => {
       expect.stringContaining("LaterApproved preview 4"),
       expect.stringContaining("LaterApproved preview 5"),
     ]);
+    expect(screen.getByRole("button", { name: "Hide later steps" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.queryByText("What plants need")).not.toBeInTheDocument();
+    expect(screen.queryByText(/revisit/i)).not.toBeInTheDocument();
   });
 
   it("restores the selected support and preview screen after a refresh", async () => {
     const user = userEvent.setup();
     renderApp("/student/focus");
-    await user.click(await screen.findByRole("radio", { name: supportNames.wordSupport }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.helpWithWords }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     cleanup();
     renderApp("/student/focus");
@@ -247,6 +283,7 @@ describe("Phase 4 Focus Journey", () => {
   it("pauses and resumes the same step", async () => {
     const user = await openJourney();
     await answerAndContinue(user, "Photosynthesis");
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Pause journey" }));
     expect(await screen.findByRole("heading", { name: "Journey paused" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Resume journey" }));
@@ -264,6 +301,7 @@ describe("Phase 4 Focus Journey", () => {
   it("changes the entry action to Resume only after valid saved progress exists", async () => {
     const user = await openJourney();
     await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Exit to full lesson" }));
     expect(await screen.findByRole("button", { name: "Resume Focus Journey" })).toBeInTheDocument();
   });
@@ -284,10 +322,9 @@ describe("Phase 4 Focus Journey", () => {
     const recovery = await screen.findByRole("heading", { name: "Let’s find a way through" });
     expect(recovery).toHaveFocus();
     const panel = recovery.closest("section");
-    expect(within(panel!).getByText("What plants need")).toBeInTheDocument();
     expect(within(panel!).getByText("Show the important words")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   });
 
   it("provides the recovery action on every approved concept screen", async () => {
@@ -304,7 +341,7 @@ describe("Phase 4 Focus Journey", () => {
     const user = await openJourney();
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
-    const words = await screen.findByRole("heading", { name: "Start with the important words" });
+    const words = await screen.findByRole("heading", { name: "Let’s find a way through" });
     expect(within(words.closest("section")!).getByText("Water")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
     expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
@@ -313,14 +350,85 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Show another explanation" }));
     expect(await screen.findByText("Approved alternate explanation for What plants need.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show where this fits" }));
-    const flow = await screen.findByRole("heading", { name: "Where this fits in the lesson" });
+    const flow = await screen.findByRole("heading", { name: "Let’s find a way through" });
     expect(within(flow.closest("section")!).getByText("Now")).toBeInTheDocument();
     expect(within(flow.closest("section")!).getByText("Next")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Let me try again" }));
-    expect(screen.queryByRole("heading", { name: "Where this fits in the lesson" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Photosynthesis")).toHaveFocus();
+    expect(screen.queryByRole("heading", { name: "Concept connection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Which key term is listed first/ })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Continue support" }));
-    expect(await screen.findByRole("heading", { name: "Where this fits in the lesson" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Concept connection" })).toBeInTheDocument();
+  });
+
+  it("activates the compact journey shell that hides demo chrome in the browser", async () => {
+    await openJourney();
+    expect(document.body).toHaveClass("focus-journey-active");
+    expect(document.querySelector(".site-header")).toBeInTheDocument();
+    expect(document.querySelector(".primary-nav")).toBeInTheDocument();
+  });
+
+  it("keeps normal controls focused on learning and reveals utility actions only through More", async () => {
+    const user = await openJourney();
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveClass("focus-primary-action");
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "I’m stuck" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause journey" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change support" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Exit to full lesson" })).not.toBeInTheDocument();
+    const more = screen.getByRole("button", { name: "More" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    more.focus();
+    await user.keyboard("{Enter}");
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Pause journey" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change support" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exit to full lesson" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart journey" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart journey" }).closest(".focus-utility-restart")).not.toBeNull();
+    await user.keyboard("{Enter}");
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Pause journey" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the selected answer while recovery is the only visible learning task", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toHaveFocus();
+    expect(screen.queryByText("What plants need definition")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Key terms" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /Which key term is listed first/ })).not.toBeInTheDocument();
+    for (const label of ["Back", "Continue", "I’m stuck", "More", "Pause journey", "Change support", "Exit to full lesson", "Restart journey"]) {
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText(/Support step|Next:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Orient" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Step 1 of 5")).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "What plants need" })).toHaveLength(1);
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    const storedDuringRecovery = readFocusJourneyProgress(`shravya:focus:${course.id}:${v1}:v1`, steps).progress;
+    expect(storedDuringRecovery.selectedAnswers[steps[0].id]).toBe("Photosynthesis");
+    expect(storedDuringRecovery.completedStepIds).not.toContain(steps[0].id);
+    await user.click(screen.getByRole("button", { name: "Return to question" }));
+    expect(screen.getByLabelText("Photosynthesis")).toBeChecked();
+    expect(screen.getByRole("group", { name: /Which key term is listed first/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+  });
+
+  it("returns from Let me try again without completing the concept", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    for (const action of ["Show the important words", "Give me a small cue", "Show a concrete example", "Show another explanation", "Show where this fits"]) {
+      await user.click(screen.getByRole("button", { name: action }));
+    }
+    await user.click(screen.getByRole("button", { name: "Let me try again" }));
+    expect(screen.getByLabelText("Photosynthesis")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+    const steps = buildFocusJourneySteps(focusLessonFixture());
+    const recovered = readFocusJourneyProgress(`shravya:focus:${course.id}:${v1}:v1`, steps).progress;
+    expect(recovered.completedStepIds).not.toContain(steps[0].id);
+    expect(recovered.recoveryByConcept[steps[0].id]).toMatchObject({ recoveryOpened: false, returnedToTry: true, highestRecoveryStage: 6 });
   });
 
   it("derives the recovery flow from the approved concept sequence", async () => {
@@ -335,7 +443,7 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Show a concrete example" }));
     await user.click(screen.getByRole("button", { name: "Show another explanation" }));
     await user.click(screen.getByRole("button", { name: "Show where this fits" }));
-    const flow = await screen.findByRole("heading", { name: "Where this fits in the lesson" });
+    const flow = await screen.findByRole("heading", { name: "Let’s find a way through" });
     const panel = within(flow.closest("section")!);
     expect(panel.getByText("Approved recovery 1")).toBeInTheDocument();
     expect(panel.getByText("Approved recovery 2")).toBeInTheDocument();
@@ -347,7 +455,9 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Return to question" }));
+    expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
   });
 
   it("fails closed for an incomplete matching recovery pack without rendering partial support", async () => {
@@ -361,7 +471,7 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     expect(await screen.findByText("Support for this step is not available yet.")).toBeInTheDocument();
     expect(screen.queryByText("Approved example for What plants need.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   });
 
   it("fails closed for duplicate matching packs instead of selecting either pack", async () => {
@@ -395,14 +505,16 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
     await user.click(screen.getByRole("button", { name: "Give me a small cue" }));
     expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Return to question" }));
     await user.click(screen.getByLabelText("Photosynthesis"));
     await user.click(screen.getByRole("button", { name: /^Continue$/ }));
     expect(await screen.findByRole("heading", { name: "How inputs reach the leaf" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
     expect(screen.queryByText("Approved cue for What plants need.")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Return to concept" }));
+    await user.click(screen.getByRole("button", { name: "Return to question" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Continue support" }));
     expect(await screen.findByText("Approved cue for What plants need.")).toBeInTheDocument();
   });
 
@@ -412,10 +524,12 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
     cleanup();
     renderApp("/student/focus", recoveryFetch());
-    expect(await screen.findByRole("heading", { name: "Start with the important words" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Return to question" }));
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Restart journey" }));
-    await user.click(screen.getByRole("button", { name: "Confirm restart" }));
-    expect(await screen.findByText("Support: Less at once")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
+    expect(await screen.findByText("Support: One step at a time")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     expect(await screen.findByRole("heading", { name: "Let’s find a way through" })).toBeInTheDocument();
@@ -424,25 +538,26 @@ describe("Phase 4 Focus Journey", () => {
   it("uses each selected support mode only to present approved recovery support", async () => {
     const user = userEvent.setup();
     renderApp("/student/focus", recoveryFetch());
-    await user.click(await screen.findByRole("radio", { name: supportNames.clearPath }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.oneStep }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
-    expect(await screen.findByText("Support step 1 of 6 · Next: Show the important words")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Show the important words" })).toBeInTheDocument();
+    expect(screen.queryByText(/Support step|Next:/)).not.toBeInTheDocument();
     cleanup();
     nativeLocalStorage.clear();
     renderApp("/student/focus", recoveryFetch());
-    await user.click(await screen.findByRole("radio", { name: supportNames.wordSupport }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.helpWithWords }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
-    const wordSupportPanel = screen.getByRole("heading", { name: "Start with the important words" }).closest("section")!;
+    const wordSupportPanel = screen.getByRole("heading", { name: "Let’s find a way through" }).closest("section")!;
     expect(within(wordSupportPanel).getByText("Photosynthesis")).toBeInTheDocument();
     cleanup();
     nativeLocalStorage.clear();
     renderApp("/student/focus", recoveryFetch());
-    await user.click(await screen.findByRole("radio", { name: supportNames.examples }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.chooseSupport }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
@@ -453,7 +568,7 @@ describe("Phase 4 Focus Journey", () => {
     cleanup();
     nativeLocalStorage.clear();
     renderApp("/student/focus", recoveryFetch());
-    await user.click(await screen.findByRole("radio", { name: supportNames.chooseAsIGo }));
+    await user.click(await screen.findByRole("radio", { name: supportNames.chooseSupport }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
@@ -467,7 +582,7 @@ describe("Phase 4 Focus Journey", () => {
     await answerAndContinue(user, "Stomata");
     await user.click(screen.getByRole("button", { name: "I’m stuck" }));
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
-    const panel = await screen.findByRole("heading", { name: "Start with the important words" });
+    const panel = await screen.findByRole("heading", { name: "Let’s find a way through" });
     expect(within(panel.closest("section")!).getByText("Chlorophyll")).toBeInTheDocument();
     expect(within(panel.closest("section")!).getByText("ക്ലോറോഫിൽ")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/\bchlorophil\b/);
@@ -479,14 +594,15 @@ describe("Phase 4 Focus Journey", () => {
   it("changes support without deleting completed concept progress", async () => {
     const user = await openJourney();
     await answerAndContinue(user, "Photosynthesis");
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Change support" }));
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: supportNames.examples }));
+    await user.click(screen.getByRole("radio", { name: supportNames.chooseSupport }));
     await user.click(screen.getByRole("button", { name: "Continue with this support" }));
     const steps = buildFocusJourneySteps(focusLessonFixture());
     const stored = readFocusJourneyProgress(`shravya:focus:${course.id}:${v1}:v1`, steps).progress;
     expect(stored.completedStepIds).toContain(steps[0].id);
-    expect(stored.supportMode).toBe("examples");
+    expect(stored.supportMode).toBe("choose_support");
     expect(stored.screen).toBe("journey-preview");
   });
 
@@ -502,7 +618,7 @@ describe("Phase 4 Focus Journey", () => {
     const steps = buildFocusJourneySteps(focusLessonFixture());
     const contradictory = {
       ...newFocusJourneyProgress(journeyKey),
-      supportMode: "less_at_once" as const,
+      supportMode: "one_step_at_a_time" as const,
       screen: "concept" as const,
       recoveryByConcept: {
         [steps[0].id]: {
@@ -549,7 +665,7 @@ describe("Phase 4 Focus Journey", () => {
     }
 
     const answers = Object.fromEntries(steps.map((step) => [step.id, step.check.correctAnswer]));
-    const complete = { ...base, supportMode: "less_at_once" as const, screen: "complete" as const, currentStepIndex: steps.length - 1, completedStepIds: steps.map((step) => step.id), selectedAnswers: answers, correctAnswers: answers, isComplete: true };
+    const complete = { ...base, supportMode: "one_step_at_a_time" as const, screen: "complete" as const, currentStepIndex: steps.length - 1, completedStepIds: steps.map((step) => step.id), selectedAnswers: answers, correctAnswers: answers, isComplete: true };
     window.localStorage.setItem(journeyKey, JSON.stringify(complete));
     expect(readFocusJourneyProgress(journeyKey, steps)).toMatchObject({ hasValidProgress: true, progress: complete });
   });
@@ -558,14 +674,32 @@ describe("Phase 4 Focus Journey", () => {
     const user = await openJourney();
     await user.click(screen.getByLabelText("Photosynthesis"));
     window.localStorage.setItem("shravya:focus:another-course:context:v1", "preserve-me");
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Restart journey" }));
-    expect(screen.getByRole("dialog", { name: "Restart journey?" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Confirm restart" }));
+    const confirmation = screen.getByRole("dialog", { name: "Restart this journey?" });
+    expect(confirmation).toHaveTextContent("Your learning and recovery progress for this journey will be cleared.");
+    expect(within(confirmation).getAllByRole("button").map((button) => button.textContent)).toEqual(["Keep my progress", "Restart journey"]);
+    expect(within(confirmation).getByRole("button", { name: "Keep my progress" })).toHaveClass("focus-primary-action");
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
     expect(await screen.findByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
-    expect(screen.getByText("Support: Less at once")).toBeInTheDocument();
+    expect(screen.getByText("Support: One step at a time")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     expect(window.localStorage.getItem("shravya:focus:another-course:context:v1")).toBe("preserve-me");
+  });
+
+  it("keeps progress when restart confirmation is cancelled and returns focus to Restart journey", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
+    const confirmation = screen.getByRole("heading", { name: "Restart this journey?" });
+    expect(confirmation).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Keep my progress" }));
+    const restart = screen.getByRole("button", { name: "Restart journey" });
+    expect(restart).toHaveFocus();
+    expect(screen.getByLabelText("Photosynthesis")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
   });
 
   it("keeps the journey usable when reading storage fails or localStorage is unavailable", async () => {
@@ -596,8 +730,9 @@ describe("Phase 4 Focus Journey", () => {
     const user = await openJourney();
     await user.click(screen.getByLabelText("Photosynthesis"));
     expect(screen.getByText("Progress is being kept for this visit only because device storage is unavailable.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More" }));
     await user.click(screen.getByRole("button", { name: "Restart journey" }));
-    await user.click(screen.getByRole("button", { name: "Confirm restart" }));
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
     expect(await screen.findByRole("heading", { name: "5 small steps" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     expect(screen.getByRole("heading", { name: "What plants need" })).toBeInTheDocument();
@@ -611,7 +746,7 @@ describe("Phase 4 Focus Journey", () => {
     const user = await openJourney();
     for (const answer of ["Photosynthesis", "Stomata", "Chlorophyll", "Glucose", "Oxygen"]) {
       await user.click(screen.getByLabelText(answer));
-      if (answer !== "Oxygen") await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.click(screen.getByRole("button", { name: "Continue" }));
     }
     expect(await screen.findByRole("heading", { name: "Journey complete" })).toBeInTheDocument();
     expect(screen.getByText("You explored the lesson one step at a time.")).toBeInTheDocument();

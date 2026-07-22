@@ -9,6 +9,7 @@ const spokenFixturePath = fileURLToPath(new URL("../../backend/app/demo/assets/p
 
 test.describe.serial("complete trusted lesson judge journey", () => {
   test("complete trusted lesson judge journey", async ({ page }) => {
+    test.setTimeout(60_000);
     await page.route("**/teacher/lessons/*/recordings", async (route) => {
       const response = await route.fetch();
       await new Promise((resolve) => setTimeout(resolve, 180));
@@ -26,9 +27,14 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(navigation.getByRole("link", { name: "Teacher review" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: "Teacher" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("heading", { name: "Recovery support for this lesson" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Approve recovery pack" })).toHaveCount(5);
-    for (let pack = 0; pack < 5; pack += 1) {
-      await page.getByRole("button", { name: "Approve recovery pack" }).first().click();
+    const recoveryPackCards = page.locator(".recovery-pack-card");
+    for (let index = 0; index < await recoveryPackCards.count(); index += 1) {
+      const card = recoveryPackCards.nth(index);
+      const approval = card.getByRole("button", { name: "Approve recovery pack" });
+      if (await approval.count() && await approval.isEnabled()) {
+        await approval.click();
+        await expect(card.getByRole("button", { name: "Recovery pack approved" })).toBeVisible();
+      }
     }
     await expect(page.getByRole("button", { name: "Recovery pack approved" })).toHaveCount(5);
 
@@ -133,42 +139,119 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(page.getByRole("button", { name: "Start Focus Journey" })).toBeVisible();
     await page.getByRole("button", { name: "Start Focus Journey" }).click();
     await expect(page).toHaveURL(/\/student\/focus$/);
+    await page.setViewportSize({ width: 1536, height: 700 });
+    await expect(page.locator(".site-header")).toBeHidden();
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Student", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
     await expect(page.getByText("Shravya responds to what helps you learn today.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
-    await page.getByLabel(/Less at once\s+Show one short idea at a time\./).check();
+    await expect(page.getByRole("radio")).toHaveCount(3);
+    await page.getByLabel(/One step at a time\s+Show one clear step and one support at a time\./).check();
     await page.getByRole("button", { name: "Continue with this support" }).click();
-    await expect(page.getByText("Support: Less at once")).toBeVisible();
+    await expect(page.getByText("Support: One step at a time")).toBeVisible();
     await expect(page.getByText("Now")).toBeVisible();
     await expect(page.getByText("Next")).toBeVisible();
-    await expect(page.getByText("Later")).toHaveCount(3);
+    await expect(page.getByText("Later", { exact: true })).toHaveCount(0);
+    const laterSteps = page.getByRole("button", { name: "See 3 later steps" });
+    await expect(laterSteps).toHaveAttribute("aria-expanded", "false");
+    await laterSteps.click();
+    const hideLaterSteps = page.getByRole("button", { name: "Hide later steps" });
+    await expect(hideLaterSteps).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("Later", { exact: true })).toHaveCount(3);
+    await hideLaterSteps.click();
+    await expect(laterSteps).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByText("Later", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Start with step 1" }).click();
     await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
     await expect(page.getByText("Step 1 of 5")).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Focus Journey progress: Step 1 of 5" })).toBeVisible();
-    await expect(page.getByText("Progress is saved on this device.")).toBeVisible();
     await expect(page.locator(".focus-step-card h1")).toHaveCount(1);
     await expect(page.locator(".focus-journey")).not.toContainText(/score|streak|timer|autoplay|punish/i);
+    await expect(page.getByRole("button", { name: "Pause journey" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "More" })).toHaveAttribute("aria-expanded", "false");
+    const assertNormalStepFitsViewport = async (width: number, height: number) => {
+      await page.setViewportSize({ width, height });
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+      const requiredElements = [
+        page.locator(".focus-progress-copy"),
+        page.getByRole("progressbar", { name: "Focus Journey progress: Step 1 of 5" }),
+        page.locator(".focus-step-card h1"),
+        page.locator(".focus-malayalam"),
+        page.locator(".focus-explanation"),
+        page.locator(".focus-terms"),
+        ...await page.locator(".focus-terms li").all(),
+        page.locator(".focus-check"),
+        ...await page.locator(".focus-answer-option").all(),
+        page.getByRole("button", { name: "I’m stuck", exact: true }),
+        page.getByRole("button", { name: "Back", exact: true }),
+        page.getByRole("button", { name: "Continue", exact: true }),
+        page.getByRole("button", { name: "More", exact: true }),
+      ];
+      for (const element of requiredElements) {
+        const box = await element.boundingBox();
+        expect(box?.y).toBeGreaterThanOrEqual(0);
+        expect((box?.y ?? 0) + (box?.height ?? 0), `The normal Step 1 task remains fully visible at ${width}×${height}`).toBeLessThanOrEqual(height);
+      }
+    };
+    await assertNormalStepFitsViewport(1536, 700);
+    await assertNormalStepFitsViewport(1536, 732);
+    await assertNormalStepFitsViewport(1280, 720);
+    await page.getByRole("radio").first().check();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "I’m stuck" }).click();
     await expect(page.getByRole("heading", { name: "Let’s find a way through" })).toBeVisible();
+    await expect(page.locator(".focus-recovery")).not.toContainText(/Support step|Orient|Next:/);
+    await expect(page.locator(".focus-recovery").getByRole("heading", { name: "What plants need" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: /Which key term is listed first/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "More" })).toHaveCount(0);
     await page.getByRole("button", { name: "Show the important words" }).click();
-    await expect(page.getByRole("heading", { name: "Start with the important words" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Important words" })).toBeVisible();
     await page.getByRole("button", { name: "Give me a small cue" }).click();
-    await expect(page.getByRole("heading", { name: "Here is one small cue" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Small cue" })).toBeVisible();
     await page.getByRole("button", { name: "Show a concrete example" }).click();
-    await expect(page.getByRole("heading", { name: "See one concrete example" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Concrete example" })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "See one concrete example" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Concrete example" })).toBeVisible();
+    await page.getByRole("button", { name: "Return to question" }).click();
+    await expect(page.getByRole("radio").first()).toBeChecked();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Continue support" }).click();
     await page.getByRole("button", { name: "Show another explanation" }).click();
     await page.getByRole("button", { name: "Show where this fits" }).click();
-    await expect(page.getByRole("heading", { name: "Where this fits in the lesson" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Concept connection" })).toBeVisible();
     await page.getByRole("button", { name: "Let me try again" }).click();
     await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+    await expect(page.getByRole("radio").first()).toBeChecked();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
     await expect(page.locator("body")).not.toContainText(/\bchlorophil\b/);
     await expect(page.getByRole("button", { name: "Confirm" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Unsure" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Exit to full lesson" }).click();
+    await page.getByRole("button", { name: "More" }).click();
+    const utility = page.locator(".focus-utility-actions");
+    await expect(utility.locator(".focus-utility-normal").getByRole("button", { name: "Pause journey" })).toBeVisible();
+    await expect(utility.locator(".focus-utility-normal").getByRole("button", { name: "Change support" })).toBeVisible();
+    await expect(utility.locator(".focus-utility-normal").getByRole("button", { name: "Exit to full lesson" })).toBeVisible();
+    await expect(utility.locator(".focus-utility-restart").getByRole("button", { name: "Restart journey" })).toBeVisible();
+    await utility.locator(".focus-utility-restart").getByRole("button", { name: "Restart journey" }).click();
+    const restartConfirmation = page.getByRole("dialog", { name: "Restart this journey?" });
+    await expect(restartConfirmation).toBeVisible();
+    await expect(restartConfirmation.getByRole("button", { name: "Keep my progress" })).toHaveClass(/focus-primary-action/);
+    await restartConfirmation.getByRole("button", { name: "Keep my progress" }).click();
+    await expect(page.getByRole("radio").first()).toBeChecked();
+    await utility.locator(".focus-utility-restart").getByRole("button", { name: "Restart journey" }).click();
+    await page.getByRole("dialog", { name: "Restart this journey?" }).getByRole("button", { name: "Restart journey" }).click();
+    await expect(page.getByText("Support: One step at a time")).toBeVisible();
+    await expect(page.getByText("Later", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Start with step 1" }).click();
+    await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "More" }).click();
+    const exitToLesson = page.getByRole("button", { name: "Exit to full lesson" });
+    await expect(exitToLesson).toBeVisible();
+    await exitToLesson.click();
     await expect(page).toHaveURL(/\/student$/);
     await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
   });

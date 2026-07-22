@@ -229,9 +229,9 @@ test("Focus Journey restores recovery and a paused approved-lesson step after re
   await page.goto("/student");
   await page.getByRole("button", { name: "Start Focus Journey" }).click();
   await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
-  await page.getByLabel(/Less at once\s+Show one short idea at a time\./).check();
+  await page.getByLabel(/One step at a time\s+Show one clear step and one support at a time\./).check();
   await page.getByRole("button", { name: "Continue with this support" }).click();
-  await expect(page.getByText("Support: Less at once")).toBeVisible();
+  await expect(page.getByText("Support: One step at a time")).toBeVisible();
   await page.getByRole("button", { name: "Start with step 1" }).click();
   await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
   await page.getByRole("button", { name: "I’m stuck" }).click();
@@ -239,12 +239,13 @@ test("Focus Journey restores recovery and a paused approved-lesson step after re
   await page.reload();
   await expect(page.getByRole("heading", { name: "Let’s find a way through" })).toBeVisible();
   await page.getByRole("button", { name: "Show the important words" }).click();
-  await expect(page.getByRole("heading", { name: "Start with the important words" })).toBeVisible();
-  await page.getByRole("button", { name: "Return to concept" }).click();
+  await expect(page.getByRole("heading", { name: "Important words" })).toBeVisible();
+  await page.getByRole("button", { name: "Return to question" }).click();
   await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
   await page.getByLabel("Photosynthesis").check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How inputs reach the leaf" })).toBeVisible();
+  await page.getByRole("button", { name: "More" }).click();
   await page.getByRole("button", { name: "Pause journey" }).click();
   await expect(page.getByRole("heading", { name: "Journey paused" })).toBeVisible();
   await page.reload();
@@ -252,6 +253,7 @@ test("Focus Journey restores recovery and a paused approved-lesson step after re
   await expect(page.getByText("Focus Journey · Step 2 of 5")).toBeVisible();
   await page.getByRole("button", { name: "Resume journey" }).click();
   await expect(page.getByRole("heading", { name: "How inputs reach the leaf" })).toBeVisible();
+  await page.getByRole("button", { name: "More" }).click();
   await page.getByRole("button", { name: "Exit to full lesson" }).click();
   await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
   await expectNoSeriousAxeViolations(page);

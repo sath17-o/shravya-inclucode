@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { apiBaseUrl, ApiError, curriculumApi } from "../api/client";
@@ -751,17 +751,7 @@ function QuestionList({ lesson }: { lesson: Lesson | StudentLesson }) {
 
 const RECOVERY_STAGE_COUNT = 6;
 
-const recoveryStageLabels: Record<FocusRecoveryStage, string> = {
-  1: "Let’s find a way through",
-  2: "Show the important words",
-  3: "Give me a small cue",
-  4: "Show a concrete example",
-  5: "Explain it differently",
-  6: "Show where this fits",
-};
-
-const recoveryMenuLabels: Record<FocusRecoveryStage, string> = {
-  1: "Orientation",
+const recoveryMenuLabels: Record<Exclude<FocusRecoveryStage, 1>, string> = {
   2: "Important words",
   3: "Small cue",
   4: "Concrete example",
@@ -813,37 +803,32 @@ function FocusRecoveryPanel({
     return <section aria-labelledby={`recovery-${step.id}`} className="focus-recovery" role="region">
       <h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Let’s find a way through</h2>
       <p>Support for this step is not available yet.</p><p>You can return to the lesson and continue normally.</p>
-      <Button className="focus-secondary-action" onClick={() => onClose(false)} type="button">Return to concept</Button>
+      <Button className="focus-secondary-action" onClick={() => onClose(false)} type="button">Return to question</Button>
     </section>;
   }
   return <section aria-labelledby={`recovery-${step.id}`} className="focus-recovery" role="region">
     <p className="sr-only" role="status">Support stage {stage} of {RECOVERY_STAGE_COUNT}</p>
     <p className="eyebrow">LEARNING SUPPORT</p>
-    {mode === "clear_path" ? <p className="quiet-copy">Support step {stage} of {RECOVERY_STAGE_COUNT} · Next: {stage < RECOVERY_STAGE_COUNT ? recoveryStageLabels[(stage + 1) as FocusRecoveryStage] : "return to the concept"}</p> : null}
-    {stage === 1 ? <>
-      <h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Let’s find a way through</h2>
-      <p>We will use one small support at a time.</p>
-      <article className="focus-recovery-card"><p className="eyebrow">YOU ARE HERE</p><p><strong>Step {stepIndex + 1} of {steps.length}</strong></p><Bilingual english={step.concept.title} malayalam={step.concept.malayalam_title} /><p>This is the idea you are working on now.</p></article>
-    </> : null}
-    {stage === 2 ? <>
-      <h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Start with the important words</h2>
-      {terms.length ? <ul className={`focus-recovery-words ${mode === "word_support" ? "priority" : ""}`}>{terms.map((term) => <li key={term.id}><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></li>)}</ul> : <p>Word support is not available for this step yet.</p>}
-    </> : null}
-    {stage === 3 ? <><h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Here is one small cue</h2><article className="focus-recovery-card"><Bilingual english={pack.cue.english} malayalam={pack.cue.malayalam} /></article></> : null}
-    {stage === 4 ? <><h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>See one concrete example</h2><article className="focus-recovery-card"><Bilingual english={pack.example.english} malayalam={pack.example.malayalam} /></article></> : null}
-    {stage === 5 ? <><h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>See the idea another way</h2><article className="focus-recovery-card"><Bilingual english={pack.alternate_explanation.english} malayalam={pack.alternate_explanation.malayalam} /></article></> : null}
-    {stage === 6 ? <><h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Where this fits in the lesson</h2><ol className="focus-recovery-flow">{stepIndex > 0 ? <li><span>Previous</span><strong>{steps[stepIndex - 1].concept.title}</strong></li> : null}<li><span>Now</span><strong>{step.concept.title}</strong></li>{stepIndex < steps.length - 1 ? <li><span>Next</span><strong>{steps[stepIndex + 1].concept.title}</strong></li> : null}</ol></> : null}
-    {mode === "choose_as_i_go" && stage === 1 ? <nav aria-label="Choose approved support" className="focus-recovery-menu">{([2, 3, 4, 5, 6] as FocusRecoveryStage[]).map((choice) => <Button className="focus-secondary-action" key={choice} onClick={() => onStage(choice)} type="button">{recoveryMenuLabels[choice]}</Button>)}</nav> : null}
-    <div className="focus-actions">
-      {stage === 1 ? <Button onClick={() => onStage(2)} type="button">Show the important words</Button> : null}
-      {stage === 2 ? <Button onClick={() => onStage(3)} type="button">Give me a small cue</Button> : null}
-      {mode === "examples" && stage === 2 ? <Button className="focus-secondary-action" onClick={() => onStage(4)} type="button">Show the example now</Button> : null}
-      {stage === 3 ? <Button onClick={() => onStage(4)} type="button">Show a concrete example</Button> : null}
-      {stage === 4 ? <Button onClick={() => onStage(5)} type="button">Show another explanation</Button> : null}
-      {stage === 5 ? <Button onClick={() => onStage(6)} type="button">Show where this fits</Button> : null}
-      {stage === 6 ? <Button onClick={() => onClose(true)} type="button">Let me try again</Button> : null}
+    <h2 id={`recovery-${step.id}`} ref={headingRef} tabIndex={-1}>Let’s find a way through</h2>
+    <p>We will use one small support at a time.</p>
+    <article className="focus-recovery-current">
+      {stage === 1 ? <><p className="eyebrow">YOU ARE HERE</p><p>This is the idea you are working on now.</p></> : null}
+      {stage === 2 ? <><h3>Important words</h3>{terms.length ? <ul className={`focus-recovery-words ${mode === "help_with_words" ? "priority" : ""}`}>{terms.map((term) => <li key={term.id}><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></li>)}</ul> : <p>Word support is not available for this step yet.</p>}</> : null}
+      {stage === 3 ? <><h3>Small cue</h3><Bilingual english={pack.cue.english} malayalam={pack.cue.malayalam} /></> : null}
+      {stage === 4 ? <><h3>Concrete example</h3><Bilingual english={pack.example.english} malayalam={pack.example.malayalam} /></> : null}
+      {stage === 5 ? <><h3>Alternate explanation</h3><Bilingual english={pack.alternate_explanation.english} malayalam={pack.alternate_explanation.malayalam} /></> : null}
+      {stage === 6 ? <><h3>Concept connection</h3><ol className="focus-recovery-flow">{stepIndex > 0 ? <li><span>Previous</span><strong>{steps[stepIndex - 1].concept.title}</strong></li> : null}<li><span>Now</span><strong>{step.concept.title}</strong></li>{stepIndex < steps.length - 1 ? <li><span>Next</span><strong>{steps[stepIndex + 1].concept.title}</strong></li> : null}</ol></> : null}
+    </article>
+    {mode === "choose_support" && stage === 1 ? <nav aria-label="Choose approved support" className="focus-recovery-menu">{([2, 3, 4, 5, 6] as Exclude<FocusRecoveryStage, 1>[]).map((choice) => <Button className="focus-secondary-action" key={choice} onClick={() => onStage(choice)} type="button">{recoveryMenuLabels[choice]}</Button>)}</nav> : null}
+    <div className="focus-actions focus-recovery-actions">
+      {stage === 1 ? <Button className="focus-primary-action" onClick={() => onStage(2)} type="button">Show the important words</Button> : null}
+      {stage === 2 ? <Button className="focus-primary-action" onClick={() => onStage(3)} type="button">Give me a small cue</Button> : null}
+      {stage === 3 ? <Button className="focus-primary-action" onClick={() => onStage(4)} type="button">Show a concrete example</Button> : null}
+      {stage === 4 ? <Button className="focus-primary-action" onClick={() => onStage(5)} type="button">Show another explanation</Button> : null}
+      {stage === 5 ? <Button className="focus-primary-action" onClick={() => onStage(6)} type="button">Show where this fits</Button> : null}
+      {stage === 6 ? <Button className="focus-primary-action" onClick={() => onClose(true)} type="button">Let me try again</Button> : null}
       {stage > 1 ? <Button className="focus-secondary-action" onClick={() => onStage((stage - 1) as FocusRecoveryStage)} type="button">Previous support</Button> : null}
-      <Button className="focus-secondary-action" onClick={() => onClose(false)} type="button">Return to concept</Button>
+      <Button className="focus-secondary-action" onClick={() => onClose(false)} type="button">Return to question</Button>
     </div>
   </section>;
 }
@@ -916,10 +901,25 @@ export function FocusJourneyPage() {
   const [state, setState] = useState<AsyncState<StudentOverview>>({ kind: "loading" });
   const [progress, setProgress] = useState<FocusJourneyProgress>(() => newFocusJourneyProgress());
   const [restartRequested, setRestartRequested] = useState(false);
+  const [utilityExpanded, setUtilityExpanded] = useState(false);
+  const [laterStepsExpanded, setLaterStepsExpanded] = useState(false);
   const [persistenceUnavailable, setPersistenceUnavailable] = useState(false);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
-  const firstAnswerRef = useRef<HTMLInputElement>(null);
+  const questionRef = useRef<HTMLFieldSetElement>(null);
+  const restartButtonRef = useRef<HTMLButtonElement>(null);
+  const restartConfirmRef = useRef<HTMLHeadingElement>(null);
+  const returnFocusRequested = useRef(false);
+  const restartFocusRequested = useRef(false);
+
+  useLayoutEffect(() => {
+    document.body.classList.add("focus-journey-active");
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    return () => {
+      document.body.classList.remove("focus-journey-active");
+    };
+  }, []);
   const requestOverview = useCallback(async (signal?: AbortSignal) => {
     const data = await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal);
     const approvedLesson = data.chapters[0]?.lessons[0];
@@ -940,6 +940,8 @@ export function FocusJourneyPage() {
       setProgress(result.progress);
       setPersistenceUnavailable(!result.persistenceAvailable);
       setRestartRequested(false);
+      setUtilityExpanded(false);
+      setLaterStepsExpanded(false);
       setState({ kind: "ready", data: result.data });
     } catch (error) {
       setState({ kind: "error", error: safeError(error) });
@@ -955,6 +957,8 @@ export function FocusJourneyPage() {
           setProgress(result.progress);
           setPersistenceUnavailable(!result.persistenceAvailable);
           setRestartRequested(false);
+          setUtilityExpanded(false);
+          setLaterStepsExpanded(false);
           setState({ kind: "ready", data: result.data });
         }
       } catch (error) {
@@ -981,8 +985,22 @@ export function FocusJourneyPage() {
   }, [activeRecovery?.currentRecoveryStage, activeRecovery?.recoveryOpened, progress.screen]);
 
   useEffect(() => {
-    if (progress.screen === "concept" && activeRecovery?.returnedToTry && !activeRecovery.recoveryOpened) firstAnswerRef.current?.focus();
+    if (progress.screen === "concept" && !activeRecovery?.recoveryOpened && (returnFocusRequested.current || activeRecovery?.returnedToTry)) {
+      questionRef.current?.focus();
+      returnFocusRequested.current = false;
+    }
   }, [activeRecovery?.recoveryOpened, activeRecovery?.returnedToTry, progress.screen]);
+
+  useEffect(() => {
+    if (restartRequested) restartConfirmRef.current?.focus();
+  }, [restartRequested]);
+
+  useEffect(() => {
+    if (restartFocusRequested.current && !restartRequested) {
+      restartButtonRef.current?.focus();
+      restartFocusRequested.current = false;
+    }
+  }, [restartRequested]);
 
   const updateProgress = (update: (current: FocusJourneyProgress) => FocusJourneyProgress) => {
     if (!storageKey) return;
@@ -1000,6 +1018,7 @@ export function FocusJourneyPage() {
   }
 
   const chooseSupport = (supportMode: FocusSupportMode) => {
+    setLaterStepsExpanded(false);
     updateProgress((current) => ({ ...current, supportMode, screen: "support-choice", paused: false }));
   };
 
@@ -1028,23 +1047,23 @@ export function FocusJourneyPage() {
 
   const support = FOCUS_SUPPORT_OPTIONS.find((option) => option.mode === progress.supportMode);
   if (progress.screen === "journey-preview" && support) {
+    const laterSteps = steps.slice(2);
     return (
       <article className="focus-journey focus-journey-preview" aria-labelledby="focus-preview-title">
-        <section className="focus-step-card">
+        <header className="focus-journey-header focus-compact-header"><p className="focus-journey-identity"><strong>Shravya</strong><span>Focus Journey</span></p></header>
+        <section className="focus-step-card focus-preview-card">
           <p className="eyebrow">YOUR LEARNING PATH</p>
           <h1 id="focus-preview-title">{lesson.title}</h1>
-          <p className="focus-selected-support">Support: {support.label}</p>
-          <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice" }))} type="button">Change support</Button>
+          <div className="focus-support-summary"><p className="focus-selected-support">Support: {support.label}</p><button className="focus-text-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice" }))} type="button">Change</button></div>
           <section aria-labelledby="focus-preview-steps-title" className="focus-preview-steps">
             <h2 id="focus-preview-steps-title">5 small steps</h2>
-            <ol>{steps.map((item, index) => <li key={item.id}><span>{index === 0 ? "Now" : index === 1 ? "Next" : "Later"}</span><strong>{item.concept.title}</strong>{item.concept.malayalam_title ? <small lang="ml">{item.concept.malayalam_title}</small> : null}</li>)}</ol>
+            <ol><li><span>Now</span><strong>{steps[0].concept.title}</strong>{steps[0].concept.malayalam_title ? <small lang="ml">{steps[0].concept.malayalam_title}</small> : null}</li><li><span>Next</span><strong>{steps[1].concept.title}</strong>{steps[1].concept.malayalam_title ? <small lang="ml">{steps[1].concept.malayalam_title}</small> : null}</li></ol>
+            <button aria-controls="focus-later-steps" aria-expanded={laterStepsExpanded} className="focus-text-action" onClick={() => setLaterStepsExpanded((current) => !current)} type="button">{laterStepsExpanded ? "Hide later steps" : `See ${laterSteps.length} later steps`}</button>
+            {laterStepsExpanded ? <ol id="focus-later-steps" start={3}>{laterSteps.map((item) => <li key={item.id}><span>Later</span><strong>{item.concept.title}</strong>{item.concept.malayalam_title ? <small lang="ml">{item.concept.malayalam_title}</small> : null}</li>)}</ol> : null}
           </section>
-          <section aria-labelledby="focus-preview-what-title" className="focus-preview-what">
-            <h2 id="focus-preview-what-title">In each step, you will:</h2>
-            <ul><li>Learn one idea</li><li>Try one small question</li><li>Choose whether to continue, revisit or pause</li></ul>
-          </section>
+          <p className="focus-preview-expectation">One idea and one small question at a time.</p>
           <div className="focus-actions">
-            <Button onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Start with step 1</Button>
+            <Button className="focus-primary-action" onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Start with step 1</Button>
             <Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Return to lesson</Button>
           </div>
         </section>
@@ -1063,39 +1082,40 @@ export function FocusJourneyPage() {
       recoveryByConcept: { ...current.recoveryByConcept, [step.id]: next },
     }));
   };
-  const openRecovery = () => updateRecovery({
-    recoveryOpened: true,
-    currentRecoveryStage: recovery?.highestRecoveryStage ?? 1,
-    highestRecoveryStage: recovery?.highestRecoveryStage ?? 1,
-    returnedToTry: false,
-  });
+  const openRecovery = () => {
+    setUtilityExpanded(false);
+    setRestartRequested(false);
+    updateRecovery({
+      recoveryOpened: true,
+      currentRecoveryStage: recovery?.highestRecoveryStage ?? 1,
+      highestRecoveryStage: recovery?.highestRecoveryStage ?? 1,
+      returnedToTry: false,
+    });
+  };
   const setRecoveryStage = (stage: FocusRecoveryStage) => updateRecovery({
     recoveryOpened: true,
     currentRecoveryStage: stage,
     highestRecoveryStage: Math.max(stage, recovery?.highestRecoveryStage ?? 1) as FocusRecoveryStage,
     returnedToTry: false,
   });
-  const closeRecovery = (returnedToTry: boolean) => updateRecovery({
-    recoveryOpened: false,
-    currentRecoveryStage: recovery?.currentRecoveryStage ?? 1,
-    highestRecoveryStage: recovery?.highestRecoveryStage ?? 1,
-    returnedToTry,
-  });
+  const closeRecovery = (returnedToTry: boolean) => {
+    updateRecovery({
+      recoveryOpened: false,
+      currentRecoveryStage: recovery?.currentRecoveryStage ?? 1,
+      highestRecoveryStage: recovery?.highestRecoveryStage ?? 1,
+      returnedToTry,
+    });
+    returnFocusRequested.current = true;
+  };
   const selectAnswer = (answer: string) => {
-    const isCorrect = answer === step.check.correctAnswer;
     updateProgress((current) => {
-      const completedStepIds = isCorrect
-        ? [...new Set([...current.completedStepIds, step.id])]
-        : current.completedStepIds.filter((stepId) => stepId !== step.id);
       return {
         ...current,
         selectedAnswers: { ...current.selectedAnswers, [step.id]: answer },
-        correctAnswers: isCorrect
-          ? { ...current.correctAnswers, [step.id]: answer }
-          : Object.fromEntries(Object.entries(current.correctAnswers).filter(([stepId]) => stepId !== step.id)),
-        completedStepIds,
-        isComplete: isCorrect && current.currentStepIndex === steps.length - 1 && completedStepIds.length === steps.length,
-        screen: isCorrect && current.currentStepIndex === steps.length - 1 && completedStepIds.length === steps.length ? "complete" : current.screen,
+        correctAnswers: Object.fromEntries(Object.entries(current.correctAnswers).filter(([stepId]) => stepId !== step.id)),
+        completedStepIds: current.completedStepIds.filter((stepId) => stepId !== step.id),
+        isComplete: false,
+        screen: current.screen === "complete" ? "concept" : current.screen,
       };
     });
   };
@@ -1107,6 +1127,7 @@ export function FocusJourneyPage() {
     if (!cleared || !saved) setPersistenceUnavailable(true);
     setProgress(fresh);
     setRestartRequested(false);
+    setUtilityExpanded(false);
   };
 
   if (progress.screen === "complete" && progress.isComplete) {
@@ -1145,13 +1166,30 @@ export function FocusJourneyPage() {
     );
   }
 
+  if (recoveryStage) {
+    return (
+      <article className="focus-journey" aria-labelledby="focus-step-title">
+        <header className="focus-journey-header focus-compact-header">
+          <p className="focus-journey-identity"><strong>Shravya</strong><span>Focus Journey</span></p>
+          <p className="focus-progress-copy">Step {progress.currentStepIndex + 1} of {steps.length}</p>
+          <div aria-label={`Focus Journey progress: Step ${progress.currentStepIndex + 1} of ${steps.length}`} aria-valuemax={steps.length} aria-valuemin={1} aria-valuenow={progress.currentStepIndex + 1} className="focus-progress" role="progressbar"><span style={{ width: `${((progress.currentStepIndex + 1) / steps.length) * 100}%` }} /></div>
+        </header>
+        <section className="focus-step-card focus-recovery-task">
+          <h1 id="focus-step-title">{step.concept.title}</h1>
+          {step.concept.malayalam_title ? <p className="focus-malayalam" lang="ml">{step.concept.malayalam_title}</p> : null}
+          <FocusRecoveryPanel headingRef={recoveryHeadingRef} lesson={lesson} mode={progress.supportMode} onClose={closeRecovery} onStage={setRecoveryStage} stage={recoveryStage} step={step} stepIndex={progress.currentStepIndex} steps={steps} />
+        </section>
+      </article>
+    );
+  }
+
   return (
-    <article className="focus-journey" aria-labelledby="focus-step-title">
-      <header className="focus-journey-header">
-        <p className="eyebrow">Focus Journey</p>
+    <article className="focus-journey focus-journey-concept" aria-labelledby="focus-step-title">
+      <header className="focus-journey-header focus-compact-header">
+        <p className="focus-journey-identity"><strong>Shravya</strong><span>Focus Journey</span></p>
         <p className="focus-progress-copy">Step {progress.currentStepIndex + 1} of {steps.length}</p>
         <div aria-label={`Focus Journey progress: Step ${progress.currentStepIndex + 1} of ${steps.length}`} aria-valuemax={steps.length} aria-valuemin={1} aria-valuenow={progress.currentStepIndex + 1} className="focus-progress" role="progressbar"><span style={{ width: `${((progress.currentStepIndex + 1) / steps.length) * 100}%` }} /></div>
-        <p className="quiet-copy">{persistenceUnavailable ? "Progress is being kept for this visit only because device storage is unavailable." : "Progress is saved on this device."}</p>
+        {persistenceUnavailable ? <p className="quiet-copy">Progress is being kept for this visit only because device storage is unavailable.</p> : null}
       </header>
       <section className="focus-step-card">
         <h1 id="focus-step-title" ref={stepHeadingRef} tabIndex={-1}>{step.concept.title}</h1>
@@ -1161,22 +1199,28 @@ export function FocusJourneyPage() {
           <h2 id={`terms-${step.id}`}>Key terms</h2>
           <ul>{step.terms.map((term) => <li key={term.id}><strong>{term.canonical_term}</strong>{term.malayalam_support_label ? <span lang="ml">{term.malayalam_support_label}</span> : null}</li>)}</ul>
         </section>
-        {recoveryStage ? <FocusRecoveryPanel headingRef={recoveryHeadingRef} lesson={lesson} mode={progress.supportMode} onClose={closeRecovery} onStage={setRecoveryStage} stage={recoveryStage} step={step} stepIndex={progress.currentStepIndex} steps={steps} /> : null}
-        <fieldset className="focus-check">
+        <fieldset className="focus-check" ref={questionRef} tabIndex={-1}>
           <legend>{step.check.prompt}</legend>
-          {step.check.options.map((option, index) => <label key={option} className="focus-answer-option"><input checked={selectedAnswer === option} name={`focus-check-${step.id}`} onChange={() => selectAnswer(option)} ref={index === 0 ? firstAnswerRef : undefined} type="radio" value={option} /><span>{option}</span></label>)}
+          {step.check.options.map((option) => <label key={option} className="focus-answer-option"><input checked={selectedAnswer === option} name={`focus-check-${step.id}`} onChange={() => selectAnswer(option)} type="radio" value={option} /><span>{option}</span></label>)}
         </fieldset>
         {selectedAnswer ? <p aria-live="polite" className={`focus-feedback ${answerIsCorrect ? "correct" : "incorrect"}`} role="status">{answerIsCorrect ? "That’s right. You can continue when you’re ready." : "Not quite. Look at the explanation once more and try again."}</p> : null}
+        <div className="focus-support-action"><Button className="focus-secondary-action" onClick={openRecovery} type="button">{recovery?.highestRecoveryStage && recovery.highestRecoveryStage > 1 ? "Continue support" : "I’m stuck"}</Button></div>
         <div className="focus-actions focus-step-actions">
-          <Button disabled={progress.currentStepIndex === 0} onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: Math.max(0, current.currentStepIndex - 1) }))} type="button">Back</Button>
-          <Button disabled={!answerIsCorrect} onClick={() => updateProgress((current) => current.currentStepIndex === steps.length - 1 ? { ...current, isComplete: true, screen: "complete" } : { ...current, currentStepIndex: current.currentStepIndex + 1 })} type="button">Continue</Button>
-          <Button onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button>
-          <Button className="focus-secondary-action" onClick={openRecovery} type="button">{recovery?.highestRecoveryStage && recovery.highestRecoveryStage > 1 ? "Continue support" : "I’m stuck"}</Button>
-          <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
-          <Button onClick={() => navigate("/student")} type="button">Exit to full lesson</Button>
+          <Button className="focus-secondary-action" disabled={progress.currentStepIndex === 0} onClick={() => { setUtilityExpanded(false); updateProgress((current) => ({ ...current, currentStepIndex: Math.max(0, current.currentStepIndex - 1) })); }} type="button">Back</Button>
+          <Button className="focus-primary-action" disabled={!answerIsCorrect} onClick={() => { setUtilityExpanded(false); updateProgress((current) => {
+            const completedStepIds = [...new Set([...current.completedStepIds, step.id])];
+            const completed = { ...current, completedStepIds, correctAnswers: { ...current.correctAnswers, [step.id]: step.check.correctAnswer } };
+            return current.currentStepIndex === steps.length - 1 ? { ...completed, isComplete: true, screen: "complete" } : { ...completed, currentStepIndex: current.currentStepIndex + 1 };
+          }); }} type="button">Continue</Button>
         </div>
-        <div className="focus-restart">
-          {restartRequested ? <section aria-labelledby="restart-confirm-title" className="focus-restart-confirm" role="dialog"><h2 id="restart-confirm-title">Restart journey?</h2><p>This clears only this lesson’s saved Focus Journey on this device.</p><div className="focus-actions"><Button onClick={restartJourney} type="button">Confirm restart</Button><Button onClick={() => setRestartRequested(false)} type="button">Keep my progress</Button></div></section> : <Button onClick={() => setRestartRequested(true)} type="button">Restart journey</Button>}
+        <div className="focus-utility">
+          <button aria-controls="focus-utility-actions" aria-expanded={utilityExpanded} className="button focus-secondary-action" onClick={() => { setUtilityExpanded((current) => !current); setRestartRequested(false); }} type="button">More</button>
+          {utilityExpanded ? <div className="focus-utility-actions" id="focus-utility-actions">
+            {restartRequested ? <section aria-labelledby="restart-confirm-title" className="focus-restart-confirm" role="dialog"><h2 id="restart-confirm-title" ref={restartConfirmRef} tabIndex={-1}>Restart this journey?</h2><p>Your learning and recovery progress for this journey will be cleared.</p><div className="focus-actions"><Button className="focus-primary-action" onClick={() => { restartFocusRequested.current = true; setRestartRequested(false); }} type="button">Keep my progress</Button><Button className="focus-secondary-action" onClick={restartJourney} type="button">Restart journey</Button></div></section> : <>
+              <div className="focus-utility-normal"><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button><Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Exit to full lesson</Button></div>
+              <div className="focus-utility-restart"><button className="button focus-secondary-action" onClick={() => setRestartRequested(true)} ref={restartButtonRef} type="button">Restart journey</button></div>
+            </>}
+          </div> : null}
         </div>
       </section>
     </article>

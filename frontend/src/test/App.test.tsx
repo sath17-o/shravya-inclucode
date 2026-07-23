@@ -140,6 +140,33 @@ describe("Phase 3A curriculum experience", () => {
     expect(screen.queryByText(/Visual Story later|Question Explorer preview|Phase 3/)).not.toBeInTheDocument();
   });
 
+  it("shows the fixed trusted vocabulary annotation only for the exact approved fixture", async () => {
+    const user = userEvent.setup();
+    renderApp("/student", createCurriculumFetch({
+      studentContextId: "f069db92-d848-5546-b3ad-3b10ee301600",
+      transformStudentLesson: (lesson) => ({
+        ...lesson,
+        approved_materials: lesson.approved_materials.map((material, index) => index === 0 ? {
+          ...material,
+          id: "166e94f5-7b72-50b0-b137-b9d9844ce88e",
+          content: "Plants use chlorophyll to capture sunlight. Water and carbon dioxide are changed into glucose, and oxygen is released.\n\nക്ലോറോഫിൽ സൂര്യപ്രകാശം പിടിച്ചെടുക്കാൻ സഹായിക്കുന്നു. ജലവും കാർബൺ ഡൈ ഓക്സൈഡും ഗ്ലൂക്കോസായി മാറുമ്പോൾ ഓക്സിജൻ പുറത്തുവരുന്നു.",
+        } : material),
+        glossary_terms: lesson.glossary_terms.map((term) => term.canonical_term === "Chlorophyll" ? {
+          ...term,
+          id: "a7287dbc-4022-5dbb-9395-1b77c953631c",
+          definition: "The green pigment that captures light.",
+          malayalam_explanation: "ക്ലോറോഫിൽ: വെളിച്ചം പിടിച്ചെടുക്കുന്ന പച്ച വർണകം.",
+        } : term),
+      }),
+    }));
+
+    const trigger = await screen.findByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
+    expect(trigger.closest(".trusted-explanation-copy")).toBeInTheDocument();
+    await user.click(trigger);
+    expect(screen.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toHaveTextContent("✓ Teacher-approved term");
+    expect(document.body.textContent).not.toMatch(/\bchlorophil\b|rejected alternative|unresolved|probability|review status/i);
+  });
+
   it("shows only a teacher-approved transcript and links corrected Chlorophyll to the glossary", async () => {
     renderApp("/student", createCurriculumFetch({ approvedTranscript: true }));
     expect(await screen.findByRole("heading", { name: "Approved classroom transcript" })).toBeInTheDocument();

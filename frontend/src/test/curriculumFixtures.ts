@@ -89,11 +89,11 @@ function detail(version: number, status: ContextSummary["teacher_review_status"]
   return { ...summary, chapters: [{ id: `chapter-${version}`, title: "Nutrition in Plants", sequence: 1, lessons: [lesson(version)] }], completeness: { ...complete, context_version_id: summary.id }, review_events: [] };
 }
 
-function overview(version: number, approvedTranscript = false, transformStudentLesson?: (lesson: StudentLesson) => StudentLesson): StudentOverview {
+function overview(version: number, approvedTranscript = false, transformStudentLesson?: (lesson: StudentLesson) => StudentLesson, selectedContextId?: string): StudentOverview {
   const selected = context(version, "APPROVED");
   const trustedLesson = studentLesson(version, approvedTranscript);
   const chapters: StudentChapter[] = [{ id: `chapter-${version}`, title: "Nutrition in Plants", sequence: 1, lessons: [transformStudentLesson ? transformStudentLesson(trustedLesson) : trustedLesson] }];
-  return { course, is_ready: true, selected_context_id: selected.id, version_number: version, approved_at: selected.approved_at, chapters };
+  return { course, is_ready: true, selected_context_id: selectedContextId ?? selected.id, version_number: version, approved_at: selected.approved_at, chapters };
 }
 
 function response(body: unknown, status = 200) {
@@ -121,7 +121,7 @@ function emptyAudioWorkflow(contextVersionId: string): AudioWorkflowSummary {
 }
 
 export function createCurriculumFetch(
-  options: { notReady?: boolean; fail?: boolean; failSubmitOnce?: boolean; initialV2Status?: ContextSummary["teacher_review_status"]; initialStudentVersion?: 1 | 2; approvedTranscript?: boolean; transformStudentLesson?: (lesson: StudentLesson) => StudentLesson; audioWorkflow?: AudioWorkflowSummary | ((contextVersionId: string) => AudioWorkflowSummary) } = {},
+  options: { notReady?: boolean; fail?: boolean; failSubmitOnce?: boolean; initialV2Status?: ContextSummary["teacher_review_status"]; initialStudentVersion?: 1 | 2; approvedTranscript?: boolean; transformStudentLesson?: (lesson: StudentLesson) => StudentLesson; studentContextId?: string; audioWorkflow?: AudioWorkflowSummary | ((contextVersionId: string) => AudioWorkflowSummary) } = {},
 ) {
   let v2Status: ContextSummary["teacher_review_status"] = options.initialV2Status ?? "DRAFT";
   let failSubmitOnce = options.failSubmitOnce ?? false;
@@ -135,7 +135,7 @@ export function createCurriculumFetch(
     const method = init?.method ?? "GET";
     if (options.fail) return response({ status: "error", code: "INTERNAL_ERROR", message: "SELECT * FROM private C:\\secrets", message_key: "error.internal", details: {}, recoverable: false, next_actions: [], job_id: null }, 500);
     if (url.endsWith(`/teacher/courses/${course.id}/contexts`)) return response({ status: "success", data: [context(1, "APPROVED"), context(2, v2Status)] });
-    if (url.endsWith(`/student/courses/${course.id}/lesson-overview`)) return response({ status: "success", data: options.notReady ? { course, is_ready: false, selected_context_id: null, version_number: null, approved_at: null, chapters: [] } : overview(studentVersion, options.approvedTranscript, options.transformStudentLesson) });
+    if (url.endsWith(`/student/courses/${course.id}/lesson-overview`)) return response({ status: "success", data: options.notReady ? { course, is_ready: false, selected_context_id: null, version_number: null, approved_at: null, chapters: [] } : overview(studentVersion, options.approvedTranscript, options.transformStudentLesson, options.studentContextId) });
     const contextId = url.match(/\/teacher\/contexts\/([^/]+)/)?.[1];
     const audioContextId = url.match(/\/curriculum\/context-versions\/([^/]+)\/audio-workflow/)?.[1];
     if (contextId && method === "POST" && url.endsWith("/submit-for-review")) {

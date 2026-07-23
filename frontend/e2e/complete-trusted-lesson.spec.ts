@@ -1,11 +1,33 @@
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import { realBackendApiBaseUrl } from "../scripts/playwright-real-backend";
 import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../src/demo/config";
 
 const spokenFixturePath = fileURLToPath(new URL("../../backend/app/demo/assets/photosynthesis-demo.wav", import.meta.url));
+
+function contrastRatio(foreground: string, background: string) {
+  const luminance = (color: string) => {
+    const channels = color.match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
+    const [red, green, blue] = channels.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+  };
+  const [lighter, darker] = [luminance(foreground), luminance(background)].sort((first, second) => second - first);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+async function expectForegroundContrast(locator: Locator) {
+  const styles = await locator.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { color: computed.color, background: computed.backgroundColor, border: computed.borderColor };
+  });
+  expect(contrastRatio(styles.color, styles.background)).toBeGreaterThanOrEqual(4.5);
+  return styles;
+}
 
 test.describe.serial("complete trusted lesson judge journey", () => {
   test("complete trusted lesson judge journey", async ({ page }) => {
@@ -20,6 +42,45 @@ test.describe.serial("complete trusted lesson judge journey", () => {
       await new Promise((resolve) => setTimeout(resolve, 180));
       await route.fulfill({ response });
     });
+
+    await page.goto("/student");
+    const explanationTerm = page.getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
+    await expect(explanationTerm).toBeVisible();
+    await explanationTerm.click();
+    const explanationTermTrigger = page.locator(".trusted-explanation-copy .trusted-term-trigger");
+    const definition = page.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" });
+    await expect(definition).toContainText("Chlorophyll");
+    await expect(definition).toContainText("ക്ലോറോഫിൽ");
+    await expect(definition).toContainText("The green pigment that captures light.");
+    await expect(definition).toContainText("✓ Teacher-approved term");
+    await expect(page.locator("body")).not.toContainText(/\bchlorophil\b|rejected alternative|unresolved term|probability|review status/i);
+    await expect(page.getByRole("button", { name: "Confirm" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Unsure" })).toHaveCount(0);
+    await expect(explanationTermTrigger).toHaveCSS("color", "rgb(22, 50, 79)");
+    await expect(explanationTermTrigger).toHaveCSS("background-color", "rgb(220, 238, 255)");
+    await expect(definition).toHaveCSS("color", "rgb(31, 90, 61)");
+    await expect(definition).toHaveCSS("background-color", "rgb(228, 244, 232)");
+    await expectForegroundContrast(explanationTermTrigger);
+    await expectForegroundContrast(definition);
+
+    await page.locator(".lesson-reading-settings summary").click();
+    await page.getByRole("radio", { name: "Dark", exact: true }).check();
+    await expect(explanationTermTrigger).toHaveCSS("color", "rgb(234, 247, 255)");
+    await expect(explanationTermTrigger).toHaveCSS("background-color", "rgb(23, 61, 85)");
+    await expect(definition).toHaveCSS("color", "rgb(240, 255, 246)");
+    await expect(definition).toHaveCSS("background-color", "rgb(32, 81, 60)");
+    await expectForegroundContrast(explanationTermTrigger);
+    await expectForegroundContrast(definition);
+    await page.getByRole("radio", { name: "High contrast", exact: true }).check();
+    await expect(explanationTermTrigger).toContainText("Key term");
+    await expect(definition).toContainText("✓ Teacher-approved term");
+    await expect(explanationTermTrigger).toHaveCSS("border-style", "solid");
+    const highContrastTerm = await expectForegroundContrast(explanationTermTrigger);
+    const highContrastDefinition = await expectForegroundContrast(definition);
+    expect(contrastRatio(highContrastTerm.border, highContrastTerm.background)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(highContrastDefinition.border, highContrastDefinition.background)).toBeGreaterThanOrEqual(3);
+    await page.getByRole("radio", { name: "Default", exact: true }).last().check();
 
     await page.goto("/teacher");
     await page.getByRole("button", { name: /Version 2/ }).click();
@@ -254,5 +315,19 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await exitToLesson.click();
     await expect(page).toHaveURL(/\/student$/);
     await expect(page.getByRole("heading", { name: "Photosynthesis in Plants" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Resume Focus Journey" }).click();
+    await page.getByRole("radio", { name: "Carbon dioxide" }).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("radio", { name: "Carbon dioxide" }).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Sunlight and chlorophyll" })).toBeVisible();
+    await page.getByRole("button", { name: "I’m stuck" }).click();
+    await page.getByRole("button", { name: "Show the important words" }).click();
+    const recoveryTerm = page.getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
+    await expect(recoveryTerm).toBeVisible();
+    await recoveryTerm.click();
+    await expect(page.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toContainText("✓ Teacher-approved term");
+    await expect(page.locator("body")).not.toContainText(/\bchlorophil\b|rejected alternative|unresolved term|probability|review status/i);
   });
 });

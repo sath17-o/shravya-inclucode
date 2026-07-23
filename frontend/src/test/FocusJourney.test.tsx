@@ -585,6 +585,9 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Show the important words" }));
     const panel = await screen.findByRole("heading", { name: "Let’s find a way through" });
     expect(within(panel.closest("section")!).getByText("Chlorophyll")).toBeInTheDocument();
+    const trustedTerm = within(panel.closest("section")!).getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
+    await user.click(trustedTerm);
+    expect(within(panel.closest("section")!).getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toHaveTextContent("✓ Teacher-approved term");
     expect(within(panel.closest("section")!).getByText("ക്ലോറോഫിൽ")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/\bchlorophil\b/);
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();

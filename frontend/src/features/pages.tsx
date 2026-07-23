@@ -21,6 +21,11 @@ import {
   type FocusRecoveryStage,
 } from "./focusJourney";
 import { ReadingSettingsPanel } from "./readingPreferences";
+import {
+  resolveTrustedExplanationAnnotation,
+  TrustedTermDisclosure,
+  trustedChlorophyllForRecovery,
+} from "./trustedVocabulary";
 
 type AsyncState<T> = { kind: "loading" } | { kind: "error"; error: ApiError } | { kind: "ready"; data: T };
 type TeacherWorkspace = { detail: ContextDetail; completeness: Completeness; events: ContextDetail["review_events"] };
@@ -814,7 +819,10 @@ function FocusRecoveryPanel({
     <p>We will use one small support at a time.</p>
     <article className="focus-recovery-current">
       {stage === 1 ? <><p className="eyebrow">YOU ARE HERE</p><p>This is the idea you are working on now.</p></> : null}
-      {stage === 2 ? <><h3>Important words</h3>{terms.length ? <ul className={`focus-recovery-words ${mode === "help_with_words" ? "priority" : ""}`}>{terms.map((term) => <li key={term.id}><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></li>)}</ul> : <p>Word support is not available for this step yet.</p>}</> : null}
+      {stage === 2 ? <><h3>Important words</h3>{terms.length ? <ul className={`focus-recovery-words ${mode === "help_with_words" ? "priority" : ""}`}>{terms.map((term) => {
+        const trustedTerm = trustedChlorophyllForRecovery([term]);
+        return <li key={term.id}>{trustedTerm ? <TrustedTermDisclosure term={trustedTerm} /> : <Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} />}</li>;
+      })}</ul> : <p>Word support is not available for this step yet.</p>}</> : null}
       {stage === 3 ? <><h3>Small cue</h3><Bilingual english={pack.cue.english} malayalam={pack.cue.malayalam} /></> : null}
       {stage === 4 ? <><h3>Concrete example</h3><Bilingual english={pack.example.english} malayalam={pack.example.malayalam} /></> : null}
       {stage === 5 ? <><h3>Alternate explanation</h3><Bilingual english={pack.alternate_explanation.english} malayalam={pack.alternate_explanation.malayalam} /></> : null}
@@ -892,7 +900,15 @@ export function StudentLessonPage() {
           <ReadingSettingsPanel />
         </details>
       </section>
-      <section className="student-section"><h2>Trusted explanation</h2><div className="material-grid">{lesson.approved_materials.map((material) => <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><p className="pre-line">{material.content}</p></article>)}</div></section>
+      <section className="student-section"><h2>Trusted explanation</h2><div className="material-grid">{lesson.approved_materials.map((material) => {
+        const annotation = resolveTrustedExplanationAnnotation({
+          contextId: state.data.selected_context_id,
+          versionNumber: state.data.version_number,
+          material,
+          glossaryTerms: lesson.glossary_terms,
+        });
+        return <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><div className="pre-line trusted-explanation-copy">{annotation ? <>{annotation.before}<TrustedTermDisclosure term={annotation.term} />{annotation.after}</> : material.content}</div></article>;
+      })}</div></section>
       <section className="student-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" id={term.canonical_term === "Chlorophyll" ? "glossary-chlorophyll" : undefined} key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div>{chlorophyll ? <aside className="term-correction"><h3>Confirmed classroom term</h3><p><strong>{chlorophyll.canonical_term}</strong></p>{chlorophyll.malayalam_support_label ? <p>Malayalam: <strong lang="ml">{chlorophyll.malayalam_support_label}</strong></p> : null}</aside> : null}</section>
       <section className="student-section"><h2>Concept flow</h2><p>Follow the lesson from what plants need to the oxygen they release.</p><ConceptFlow lesson={lesson} /></section>
       <section className="student-section"><h2>Question Explorer</h2><p>Use these teacher-approved questions to notice what the lesson asks you to explain.</p><QuestionList lesson={lesson} /></section>

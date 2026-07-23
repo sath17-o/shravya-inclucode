@@ -145,6 +145,63 @@ test("route navigation exposes one matching active role and lesson link", async 
   }
 });
 
+test("student reading settings persist across reload and apply in the lesson and Focus Journey", async ({ page }) => {
+  await mockJudgeApi(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/student");
+
+  await page.locator(".lesson-reading-settings summary").click();
+  await page.getByRole("radio", { name: "Easier-to-distinguish letters", exact: true }).check();
+  await page.getByRole("radio", { name: "Extra large", exact: true }).check();
+  await page.getByRole("radio", { name: "Wide", exact: true }).check();
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Reduce motion", exact: true }).check();
+
+  const boundary = page.locator("[data-student-reading-preferences]");
+  await expect(boundary).toHaveAttribute("data-reading-font", "hyperlegible");
+  await expect(boundary).toHaveAttribute("data-reading-size", "extra-large");
+  await expect(boundary).toHaveAttribute("data-reading-spacing", "wide");
+  await expect(boundary).toHaveAttribute("data-reading-contrast", "dark");
+  await expect(boundary).toHaveAttribute("data-reduce-motion", "true");
+  const darkSurface = "rgb(23, 53, 44)";
+  const primaryText = "rgb(249, 255, 250)";
+  const structuralText = "rgb(200, 222, 212)";
+  const assertDarkContrast = async (locator: ReturnType<Page["locator"]>, expected: string) => {
+    await expect(locator).toHaveCSS("color", expected);
+    const foreground = await locator.evaluate((element) => getComputedStyle(element).color);
+    expect(contrastRatio(foreground, darkSurface)).toBeGreaterThanOrEqual(4.5);
+  };
+  await assertDarkContrast(page.getByRole("heading", { name: "Lesson orientation", exact: true }), primaryText);
+  await assertDarkContrast(page.getByRole("heading", { name: "Help me focus", exact: true }), primaryText);
+  await assertDarkContrast(page.getByRole("heading", { name: "Reading settings", exact: true }), primaryText);
+  await assertDarkContrast(page.getByText("Teacher explanation", { exact: true }), structuralText);
+  await assertDarkContrast(page.getByText("Step-by-step support", { exact: true }), structuralText);
+  await assertDarkContrast(page.locator(".lesson-reading-settings summary"), structuralText);
+
+  await page.getByRole("radio", { name: "High contrast", exact: true }).check();
+  await expect(page.getByRole("heading", { name: "Lesson orientation", exact: true })).toHaveCSS("color", "rgb(23, 51, 45)");
+  await page.getByRole("radio", { name: "Default", exact: true }).last().check();
+  await expect(page.getByRole("heading", { name: "Lesson orientation", exact: true })).toHaveCSS("color", "rgb(23, 51, 45)");
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  expect(await page.locator("body").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  await page.reload();
+  await expect(boundary).toHaveAttribute("data-reading-font", "hyperlegible");
+  await page.locator(".lesson-reading-settings summary").click();
+  await expect(page.getByRole("radio", { name: "Extra large", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await page.getByRole("radio").first().check();
+  await page.getByRole("button", { name: "Continue with this support" }).click();
+  await page.getByRole("button", { name: "Start with step 1" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await expect(page.getByRole("heading", { name: "Reading settings" })).toBeVisible();
+  await expect(boundary).toHaveAttribute("data-reading-contrast", "dark");
+  await page.getByRole("button", { name: "Reset reading settings" }).click();
+  await expect(boundary).toHaveAttribute("data-reading-font", "default");
+  await expect(boundary).toHaveAttribute("data-reading-contrast", "default");
+  await expect(page.getByRole("heading", { name: "What plants need" })).toBeVisible();
+});
+
 test("judge flow shows teacher control, stale protection, and the approved v1-to-v2 student switch", async ({ page }) => {
   await mockJudgeApi(page);
   await page.goto("/student");

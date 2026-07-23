@@ -1,4 +1,34 @@
 :root {
+  --student-font-family: "Noto Sans Malayalam", "Nirmala UI", system-ui, sans-serif;
+  --student-font-scale: 1;
+  --student-letter-spacing-latin: normal;
+  --student-line-height: 1.6;
+  --student-block-spacing: 0.9rem;
+  --student-background: #f5f5ef;
+  --student-surface: #fff;
+  --student-text-color: #17332d;
+  --student-muted-text: #42665c;
+  --student-border-color: #c7d5ce;
+  --student-focus-color: #bf4b20;
+}
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("../assets/fonts/AtkinsonHyperlegible-Regular.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Noto Sans Malayalam";
+  src: url("../assets/fonts/NotoSansMalayalam-wdth-wght.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 900;
+}
+
+:root {
   color: #17332d;
   background: #f5f5ef;
   font-family: "Noto Sans Malayalam", "Nirmala UI", system-ui, sans-serif;
@@ -168,6 +198,79 @@ p { max-inline-size: 75ch; }
 .focus-utility-normal { display: grid; gap: 0.4rem; }
 .focus-utility-normal .button, .focus-utility-restart .button { width: 100%; text-align: left; }
 .focus-utility-restart { padding-top: 0.6rem; margin-top: 0.1rem; border-top: 1px solid #d5dfd9; }
+.student-reading-boundary {
+  --student-heading-color: #17332d;
+  --student-eyebrow-color: #336b5f;
+  --student-disclosure-color: #214a40;
+  --student-journey-primary-color: #1d4e42;
+  --student-journey-secondary-color: #42665c;
+  --student-journey-accent-color: #28594d;
+  --student-link-color: #124f8c;
+  --student-heading-one-min: 2rem;
+  --student-heading-one-fluid: 5vw;
+  --student-heading-one-max: 3.35rem;
+  --student-heading-two-min: 1.25rem;
+  --student-heading-two-fluid: 2.2vw;
+  --student-heading-two-max: 1.75rem;
+  --student-heading-three-size: 1.05rem;
+  color: var(--student-text-color);
+  background: var(--student-background);
+  font-family: var(--student-font-family);
+  font-size: calc(1rem * var(--student-font-scale));
+  line-height: var(--student-line-height);
+}
+.student-reading-boundary :is(p, li, label, legend, button, input, textarea) { line-height: var(--student-line-height); }
+.student-reading-boundary :is(h1, h2, h3, p, li, label, legend, button, input, textarea):not(:lang(ml)) { letter-spacing: var(--student-letter-spacing-latin); }
+.student-reading-boundary :lang(ml) { letter-spacing: normal; }
+.student-reading-boundary h1 { color: var(--student-heading-color); font-size: clamp(var(--student-heading-one-min), var(--student-heading-one-fluid), var(--student-heading-one-max)); }
+.student-reading-boundary h2 { color: var(--student-heading-color); font-size: clamp(var(--student-heading-two-min), var(--student-heading-two-fluid), var(--student-heading-two-max)); }
+.student-reading-boundary h3 { color: var(--student-heading-color); font-size: var(--student-heading-three-size); }
+.student-reading-boundary :is(.student-page, .focus-journey) { gap: var(--student-block-spacing); }
+.student-reading-boundary :is(.student-section, .focus-step-card, .focus-journey-header) { color: var(--student-text-color); background: var(--student-surface); border-color: var(--student-border-color); }
+.student-reading-boundary :is(.quiet-copy, .focus-journey-identity span, .focus-preview-expectation) { color: var(--student-muted-text); }
+.student-reading-boundary .eyebrow { color: var(--student-eyebrow-color); }
+.student-reading-boundary .student-hero h1 { color: #fff; }
+.student-reading-boundary .student-hero .eyebrow { color: #d3eadb; }
+.student-reading-boundary .lesson-reading-settings summary { color: var(--student-disclosure-color); }
+.student-reading-boundary .focus-journey-identity { color: var(--student-disclosure-color); }
+.student-reading-boundary :is(.focus-progress-copy, .focus-selected-support, .focus-preview-steps li > span, .focus-recovery-flow li > span) { color: var(--student-journey-primary-color); }
+.student-reading-boundary .focus-malayalam { color: var(--student-journey-accent-color); }
+.student-reading-boundary :is(.focus-terms li, .focus-check legend) { color: var(--student-heading-color); }
+.student-reading-boundary :is(.focus-support-option small, .focus-preview-steps small) { color: var(--student-journey-secondary-color); }
+.student-reading-boundary .question-source-label { color: var(--student-disclosure-color); }
+.student-reading-boundary .glossary-link { color: var(--student-link-color); }
+.student-reading-boundary :is(button, a):focus-visible { outline-color: var(--student-focus-color); }
+.student-reading-boundary[data-reading-font="hyperlegible"] { --student-font-family: "Atkinson Hyperlegible", "Noto Sans Malayalam", "Nirmala UI", system-ui, sans-serif; }
+.student-reading-boundary[data-reading-size="small"] { --student-font-scale: 0.9; --student-heading-one-min: 1.8rem; --student-heading-one-fluid: 4.5vw; --student-heading-one-max: 3rem; --student-heading-two-min: 1.15rem; --student-heading-two-fluid: 2vw; --student-heading-two-max: 1.55rem; --student-heading-three-size: 0.98rem; }
+.student-reading-boundary[data-reading-size="large"] { --student-font-scale: 1.15; --student-heading-one-min: 2.25rem; --student-heading-one-fluid: 5.6vw; --student-heading-one-max: 3.75rem; --student-heading-two-min: 1.4rem; --student-heading-two-fluid: 2.5vw; --student-heading-two-max: 2rem; --student-heading-three-size: 1.2rem; }
+.student-reading-boundary[data-reading-size="extra-large"] { --student-font-scale: 1.3; --student-heading-one-min: 2.5rem; --student-heading-one-fluid: 6.2vw; --student-heading-one-max: 4.1rem; --student-heading-two-min: 1.55rem; --student-heading-two-fluid: 2.8vw; --student-heading-two-max: 2.25rem; --student-heading-three-size: 1.32rem; }
+.student-reading-boundary[data-reading-spacing="compact"] { --student-letter-spacing-latin: 0; --student-line-height: 1.5; --student-block-spacing: 0.7rem; }
+.student-reading-boundary[data-reading-spacing="wide"] { --student-letter-spacing-latin: 0.045em; --student-line-height: 1.85; --student-block-spacing: 1.35rem; }
+.student-reading-boundary[data-reading-contrast="high"] { --student-background: #fff; --student-surface: #fff; --student-text-color: #000; --student-muted-text: #222; --student-border-color: #000; --student-focus-color: #003cff; }
+.student-reading-boundary[data-reading-contrast="high"] :is(.student-hero, .focus-journey-header) { color: #fff; background: #000; border-color: #000; }
+.student-reading-boundary[data-reading-contrast="high"] :is(.material-card, .glossary-card, .concept-flow li, .term-correction, .approved-transcript, .transcript-segments li, .focus-terms, .focus-check, .focus-answer-option, .focus-utility, .focus-recovery, .focus-preview-steps, .focus-support-option) { color: var(--student-text-color); background: var(--student-surface); border-color: var(--student-border-color); }
+.student-reading-boundary[data-reading-contrast="high"] :is(.button, .focus-text-action) { color: #000; background: #fff; border-color: #000; }
+.student-reading-boundary[data-reading-contrast="high"] .focus-primary-action { color: #fff; background: #000; border-color: #000; }
+.student-reading-boundary[data-reading-contrast="dark"] { --student-background: #10251f; --student-surface: #17352c; --student-text-color: #f9fffa; --student-muted-text: #c8ded4; --student-border-color: #98b8a8; --student-focus-color: #ffd166; }
+.student-reading-boundary[data-reading-contrast="dark"] { --student-heading-color: #f9fffa; --student-eyebrow-color: #c8ded4; --student-disclosure-color: #c8ded4; --student-journey-primary-color: #f9fffa; --student-journey-secondary-color: #c8ded4; --student-journey-accent-color: #f9fffa; --student-link-color: #bcecff; }
+.student-reading-boundary[data-reading-contrast="dark"] :is(.student-hero, .focus-journey-header, .material-card, .glossary-card, .concept-flow li, .term-correction, .approved-transcript, .transcript-segments li, .focus-terms, .focus-check, .focus-answer-option, .focus-utility, .focus-recovery, .focus-recovery-words li, .focus-recovery-flow li, .focus-preview-steps, .focus-support-option, .focus-reassurance) { color: var(--student-text-color); background: #17352c; border-color: var(--student-border-color); }
+.student-reading-boundary[data-reading-contrast="dark"] .question-source-label { color: var(--student-eyebrow-color); background: #244a3d; border-color: var(--student-border-color); }
+.student-reading-boundary[data-reading-contrast="dark"] :is(.focus-answer-option:has(input:checked), .focus-support-option:has(input:checked)) { background: #244a3d; border-color: #ffd166; }
+.student-reading-boundary[data-reading-contrast="dark"] :is(.button, .focus-text-action) { color: var(--student-text-color); background: #17352c; border-color: var(--student-border-color); }
+.student-reading-boundary[data-reading-contrast="dark"] .focus-primary-action { color: #10251f; background: #ffd166; border-color: #ffd166; }
+.student-reading-boundary[data-reduce-motion="true"] *, .student-reading-boundary[data-reduce-motion="true"] *::before, .student-reading-boundary[data-reduce-motion="true"] *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+.lesson-reading-settings { margin-top: 0.8rem; border-top: 1px solid #b8d0c1; }
+.lesson-reading-settings summary { min-height: 2.75rem; padding-top: 0.75rem; color: #214a40; cursor: pointer; font-weight: 800; }
+.reading-settings-panel { display: grid; gap: 0.85rem; max-width: 42rem; padding: 0.85rem; margin-top: 0.65rem; color: var(--student-text-color); background: var(--student-surface); border: 1px solid var(--student-border-color); border-radius: 0.7rem; }
+.reading-settings-panel h2, .reading-settings-panel p { margin: 0; }
+.reading-settings-group { display: grid; gap: 0.45rem; min-width: 0; padding: 0; margin: 0; border: 0; }
+.reading-settings-group legend { font-weight: 850; }
+.reading-settings-options { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.reading-settings-options label, .reading-settings-toggle { display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.75rem; padding: 0.35rem 0.55rem; border: 1px solid var(--student-border-color); border-radius: 0.5rem; cursor: pointer; }
+.reading-settings-options label:has(input:checked), .reading-settings-toggle:has(input:checked) { border-width: 3px; border-color: var(--student-focus-color); font-weight: 800; }
+.reading-settings-reset { display: grid; gap: 0.55rem; padding-top: 0.85rem; border-top: 1px solid var(--student-border-color); }
+.reading-settings-reset-action { width: fit-content; color: var(--student-text-color); background: transparent; border-color: var(--student-border-color); }
+.focus-reading-settings { width: min(100%, 35rem); padding: 0.85rem 0; margin-top: 0.35rem; border-top: 2px solid #9ebbaa; border-bottom: 2px solid #9ebbaa; }
 .focus-restart-confirm { display: grid; gap: 0.6rem; max-width: 26rem; padding: 0.8rem; background: #fff7e8; border: 1px solid #d8b574; border-radius: 0.65rem; }
 .focus-paused, .focus-completion { max-width: 42rem; }
 .focus-support-options { display: grid; gap: 0.7rem; padding: 0; margin: 0; border: 0; }

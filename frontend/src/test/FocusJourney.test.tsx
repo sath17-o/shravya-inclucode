@@ -10,6 +10,7 @@ import {
   newFocusJourneyProgress,
   readFocusJourneyProgress,
 } from "../features/focusJourney";
+import { readReadingPreferences } from "../features/readingPreferences";
 import type { StudentLesson } from "../api/contracts";
 import { course, createCurriculumFetch, focusLessonFixture, v1 } from "./curriculumFixtures";
 
@@ -686,6 +687,22 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(screen.getByRole("button", { name: "Start with step 1" }));
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     expect(window.localStorage.getItem("shravya:focus:another-course:context:v1")).toBe("preserve-me");
+  });
+
+  it("keeps reading preferences separate from the Focus Journey reset", async () => {
+    const user = await openJourney();
+    await user.click(screen.getByLabelText("Photosynthesis"));
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("radio", { name: "Easier-to-distinguish letters" }));
+    expect(readReadingPreferences().preferences.font).toBe("hyperlegible");
+    await user.click(screen.getByRole("button", { name: "Reset reading settings" }));
+    expect(readReadingPreferences().preferences.font).toBe("default");
+    expect(screen.getByLabelText("Photosynthesis")).toBeChecked();
+
+    await user.click(screen.getByRole("radio", { name: "Easier-to-distinguish letters" }));
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
+    await user.click(screen.getByRole("button", { name: "Restart journey" }));
+    expect(readReadingPreferences().preferences.font).toBe("hyperlegible");
   });
 
   it("keeps progress when restart confirmation is cancelled and returns focus to Restart journey", async () => {

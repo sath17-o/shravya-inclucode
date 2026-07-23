@@ -20,6 +20,7 @@ import {
   type FocusRecoveryProgress,
   type FocusRecoveryStage,
 } from "./focusJourney";
+import { ReadingSettingsPanel } from "./readingPreferences";
 
 type AsyncState<T> = { kind: "loading" } | { kind: "error"; error: ApiError } | { kind: "ready"; data: T };
 type TeacherWorkspace = { detail: ContextDetail; completeness: Completeness; events: ContextDetail["review_events"] };
@@ -886,6 +887,10 @@ export function StudentLessonPage() {
         <p>Learn this lesson one small step at a time.</p>
         <p className="quiet-copy">Designed to reduce information load and support step-by-step learning.</p>
         <Button onClick={() => navigate("/student/focus")} type="button">{hasStartedFocusJourney ? "Resume Focus Journey" : "Start Focus Journey"}</Button>
+        <details className="lesson-reading-settings">
+          <summary>Reading settings</summary>
+          <ReadingSettingsPanel />
+        </details>
       </section>
       <section className="student-section"><h2>Trusted explanation</h2><div className="material-grid">{lesson.approved_materials.map((material) => <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><p className="pre-line">{material.content}</p></article>)}</div></section>
       <section className="student-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" id={term.canonical_term === "Chlorophyll" ? "glossary-chlorophyll" : undefined} key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div>{chlorophyll ? <aside className="term-correction"><h3>Confirmed classroom term</h3><p><strong>{chlorophyll.canonical_term}</strong></p>{chlorophyll.malayalam_support_label ? <p>Malayalam: <strong lang="ml">{chlorophyll.malayalam_support_label}</strong></p> : null}</aside> : null}</section>
@@ -1218,6 +1223,7 @@ export function FocusJourneyPage() {
           {utilityExpanded ? <div className="focus-utility-actions" id="focus-utility-actions">
             {restartRequested ? <section aria-labelledby="restart-confirm-title" className="focus-restart-confirm" role="dialog"><h2 id="restart-confirm-title" ref={restartConfirmRef} tabIndex={-1}>Restart this journey?</h2><p>Your learning and recovery progress for this journey will be cleared.</p><div className="focus-actions"><Button className="focus-primary-action" onClick={() => { restartFocusRequested.current = true; setRestartRequested(false); }} type="button">Keep my progress</Button><Button className="focus-secondary-action" onClick={restartJourney} type="button">Restart journey</Button></div></section> : <>
               <div className="focus-utility-normal"><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button><Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Exit to full lesson</Button></div>
+              <div className="focus-reading-settings"><ReadingSettingsPanel /></div>
               <div className="focus-utility-restart"><button className="button focus-secondary-action" onClick={() => setRestartRequested(true)} ref={restartButtonRef} type="button">Restart journey</button></div>
             </>}
           </div> : null}

@@ -29,9 +29,23 @@ async function expectForegroundContrast(locator: Locator) {
   return styles;
 }
 
+async function expectResourceLinkContrast(link: Locator) {
+  const styles = await link.evaluate((element) => ({
+    color: getComputedStyle(element).color,
+    background: getComputedStyle(element.closest(".official-isl-resource")!).backgroundColor,
+  }));
+  expect(contrastRatio(styles.color, styles.background)).toBeGreaterThanOrEqual(4.5);
+}
+
 test.describe.serial("complete trusted lesson judge journey", () => {
   test("complete trusted lesson judge journey", async ({ page }) => {
     test.setTimeout(60_000);
+    const externalRequests: string[] = [];
+    page.on("request", (request) => {
+      if (/(^|\.)youtube\.com|youtu\.be|googlevideo\.com|ytimg\.com/i.test(new URL(request.url()).hostname)) {
+        externalRequests.push(request.url());
+      }
+    });
     await page.route("**/teacher/lessons/*/recordings", async (route) => {
       const response = await route.fetch();
       await new Promise((resolve) => setTimeout(resolve, 180));
@@ -46,6 +60,7 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await page.goto("/student");
     const explanationTerm = page.getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
     await expect(explanationTerm).toBeVisible();
+    await expect(page.getByRole("link", { name: /View official ISLRTC resource for Chlorophyll/ })).toHaveCount(0);
     await explanationTerm.click();
     const explanationTermTrigger = page.locator(".trusted-explanation-copy .trusted-term-trigger");
     const definition = page.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" });
@@ -53,6 +68,19 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(definition).toContainText("ക്ലോറോഫിൽ");
     await expect(definition).toContainText("The green pigment that captures light.");
     await expect(definition).toContainText("✓ Teacher-approved term");
+    const explanationResource = definition.locator(".official-isl-resource");
+    const explanationResourceLink = definition.getByRole("link", { name: "View official ISLRTC resource for Chlorophyll — opens in a new tab" });
+    await expect(explanationResourceLink).toHaveAttribute("href", "https://www.youtube.com/watch?v=Oqrmn9kYESk");
+    await expect(explanationResourceLink).toHaveAttribute("target", "_blank");
+    await expect(explanationResourceLink).toHaveAttribute("rel", /noopener/);
+    await expect(explanationResourceLink).toHaveAttribute("rel", /noreferrer/);
+    await expect(explanationResource).toContainText("External educational resource from the Indian Sign Language Research and Training Centre.");
+    await expect(explanationResource).toContainText("Developed jointly by CIET, NCERT and ISLRTC.");
+    await expect(explanationResource).toContainText("Optional external resource. Internet connection required. Opens in a new tab. It is not created by Shravya and does not replace an interpreter.");
+    await expect(definition.locator("iframe")).toHaveCount(0);
+    await expect(definition.locator("video")).toHaveCount(0);
+    await expectResourceLinkContrast(explanationResourceLink);
+    expect(externalRequests).toEqual([]);
     await expect(page.locator("body")).not.toContainText(/\bchlorophil\b|rejected alternative|unresolved term|probability|review status/i);
     await expect(page.getByRole("button", { name: "Confirm" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
@@ -70,17 +98,48 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(explanationTermTrigger).toHaveCSS("background-color", "rgb(23, 61, 85)");
     await expect(definition).toHaveCSS("color", "rgb(240, 255, 246)");
     await expect(definition).toHaveCSS("background-color", "rgb(32, 81, 60)");
+    await expectResourceLinkContrast(explanationResourceLink);
     await expectForegroundContrast(explanationTermTrigger);
     await expectForegroundContrast(definition);
     await page.getByRole("radio", { name: "High contrast", exact: true }).check();
     await expect(explanationTermTrigger).toContainText("Key term");
     await expect(definition).toContainText("✓ Teacher-approved term");
     await expect(explanationTermTrigger).toHaveCSS("border-style", "solid");
+    await explanationResourceLink.focus();
+    await expect(explanationResourceLink).toBeFocused();
+    await expect(explanationResourceLink).toHaveCSS("outline-style", "solid");
+    await expect(explanationResource).toHaveCSS("border-top-style", "solid");
     const highContrastTerm = await expectForegroundContrast(explanationTermTrigger);
     const highContrastDefinition = await expectForegroundContrast(definition);
     expect(contrastRatio(highContrastTerm.border, highContrastTerm.background)).toBeGreaterThanOrEqual(3);
     expect(contrastRatio(highContrastDefinition.border, highContrastDefinition.background)).toBeGreaterThanOrEqual(3);
+    await page.getByRole("radio", { name: "Extra large", exact: true }).check();
+    await page.getByRole("radio", { name: "Wide", exact: true }).check();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.getByRole("radio", { name: "Default", exact: true }).nth(0).check();
+    await page.getByRole("radio", { name: "Default", exact: true }).nth(1).check();
     await page.getByRole("radio", { name: "Default", exact: true }).last().check();
+
+    await page.getByRole("button", { name: "Start Focus Journey" }).click();
+    await page.getByRole("radio", { name: /One step at a time\s+Show one clear step and one support at a time\./ }).check();
+    await page.getByRole("button", { name: "Continue with this support" }).click();
+    await page.getByRole("button", { name: "Start with step 1" }).click();
+    await page.getByRole("radio", { name: "Photosynthesis" }).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("radio", { name: "Stomata" }).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Sunlight and chlorophyll" })).toBeVisible();
+    await page.getByRole("button", { name: "I’m stuck" }).click();
+    await page.getByRole("button", { name: "Show the important words" }).click();
+    const recoveryTermV1 = page.getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
+    await recoveryTermV1.click();
+    const recoveryDefinitionV1 = page.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" });
+    const recoveryResourceLinkV1 = recoveryDefinitionV1.getByRole("link", { name: "View official ISLRTC resource for Chlorophyll — opens in a new tab" });
+    await expect(recoveryResourceLinkV1).toHaveAttribute("href", "https://www.youtube.com/watch?v=Oqrmn9kYESk");
+    await expect(recoveryResourceLinkV1).toHaveAttribute("target", "_blank");
+    await expect(recoveryDefinitionV1).toContainText("External educational resource from the Indian Sign Language Research and Training Centre.");
+    await expect(recoveryDefinitionV1).toContainText("Developed jointly by CIET, NCERT and ISLRTC.");
+    expect(externalRequests).toEqual([]);
 
     await page.goto("/teacher");
     await page.getByRole("button", { name: /Version 2/ }).click();
@@ -328,6 +387,7 @@ test.describe.serial("complete trusted lesson judge journey", () => {
     await expect(recoveryTerm).toBeVisible();
     await recoveryTerm.click();
     await expect(page.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toContainText("✓ Teacher-approved term");
+    await expect(page.getByRole("link", { name: /View official ISLRTC resource for Chlorophyll/ })).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(/\bchlorophil\b|rejected alternative|unresolved term|probability|review status/i);
   });
 });

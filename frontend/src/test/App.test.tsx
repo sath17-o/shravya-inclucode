@@ -142,7 +142,7 @@ describe("Phase 3A curriculum experience", () => {
 
   it("shows the fixed trusted vocabulary annotation only for the exact approved fixture", async () => {
     const user = userEvent.setup();
-    renderApp("/student", createCurriculumFetch({
+    const fetchMock = createCurriculumFetch({
       studentContextId: "f069db92-d848-5546-b3ad-3b10ee301600",
       transformStudentLesson: (lesson) => ({
         ...lesson,
@@ -158,13 +158,33 @@ describe("Phase 3A curriculum experience", () => {
           malayalam_explanation: "ക്ലോറോഫിൽ: വെളിച്ചം പിടിച്ചെടുക്കുന്ന പച്ച വർണകം.",
         } : term),
       }),
-    }));
+    });
+    renderApp("/student", fetchMock);
 
     const trigger = await screen.findByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" });
     expect(trigger.closest(".trusted-explanation-copy")).toBeInTheDocument();
+    const requestsBeforeExpansion = fetchMock.mock.calls.length;
     await user.click(trigger);
-    expect(screen.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toHaveTextContent("✓ Teacher-approved term");
+    const definition = screen.getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" });
+    expect(definition).toHaveTextContent("✓ Teacher-approved term");
+    expect(definition).toHaveTextContent("The green pigment that captures light.");
+    const resource = screen.getByRole("link", { name: "View official ISLRTC resource for Chlorophyll — opens in a new tab" });
+    expect(resource).toHaveAttribute("href", "https://www.youtube.com/watch?v=Oqrmn9kYESk");
+    expect(resource).toHaveAttribute("target", "_blank");
+    expect(definition).toHaveTextContent("External educational resource from the Indian Sign Language Research and Training Centre.");
+    expect(fetchMock.mock.calls).toHaveLength(requestsBeforeExpansion);
     expect(document.body.textContent).not.toMatch(/\bchlorophil\b|rejected alternative|unresolved|probability|review status/i);
+  });
+
+  it("keeps plain fallback lessons readable without an external resource when trusted fixture identity does not match", async () => {
+    const user = userEvent.setup();
+    renderApp("/student", createCurriculumFetch({ initialStudentVersion: 2, studentContextId: "copied-context" }));
+    expect(await screen.findByRole("heading", { name: "Photosynthesis in Plants" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /View official ISLRTC resource/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" })).not.toBeInTheDocument();
+    expect(screen.getByText("Improved teacher explanation")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start Focus Journey" }));
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
   });
 
   it("shows only a teacher-approved transcript and links corrected Chlorophyll to the glossary", async () => {

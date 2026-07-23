@@ -33,8 +33,9 @@ function withApprovedRecoverySupport(lesson: StudentLesson): StudentLesson {
   };
 }
 
-function recoveryFetch(transform?: (lesson: StudentLesson) => StudentLesson) {
+function recoveryFetch(transform?: (lesson: StudentLesson) => StudentLesson, options: { studentContextId?: string } = {}) {
   return createCurriculumFetch({
+    studentContextId: options.studentContextId,
     transformStudentLesson: (lesson) => transform ? transform(withApprovedRecoverySupport(lesson)) : withApprovedRecoverySupport(lesson),
   });
 }
@@ -589,6 +590,7 @@ describe("Phase 4 Focus Journey", () => {
     await user.click(trustedTerm);
     expect(within(panel.closest("section")!).getByRole("region", { name: "Teacher-approved meaning for Chlorophyll" })).toHaveTextContent("✓ Teacher-approved term");
     expect(within(panel.closest("section")!).getByText("ക്ലോറോഫിൽ")).toBeInTheDocument();
+    expect(within(panel.closest("section")!).queryByRole("link", { name: /View official ISLRTC resource/ })).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/\bchlorophil\b/);
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
@@ -615,6 +617,32 @@ describe("Phase 4 Focus Journey", () => {
     renderApp("/student/focus");
     expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue with this support" })).toBeDisabled();
+  });
+
+  it("shows the exact official ISLRTC link only for the structured Chlorophyll term in the authorized context", async () => {
+    const authorizedFetch = recoveryFetch((lesson) => ({
+      ...lesson,
+      glossary_terms: lesson.glossary_terms.map((term) => term.canonical_term === "Chlorophyll" ? {
+        ...term,
+        id: "a7287dbc-4022-5dbb-9395-1b77c953631c",
+      } : term),
+    }), { studentContextId: "f069db92-d848-5546-b3ad-3b10ee301600" });
+    const user = await openJourney(authorizedFetch);
+    await answerAndContinue(user, "Photosynthesis");
+    await answerAndContinue(user, "Stomata");
+    await user.click(screen.getByRole("button", { name: "I’m stuck" }));
+    await user.click(screen.getByRole("button", { name: "Show the important words" }));
+    const panel = screen.getByRole("heading", { name: "Let’s find a way through" }).closest("section")!;
+    await user.click(within(panel).getByRole("button", { name: "Show teacher-approved meaning for Chlorophyll" }));
+    const link = within(panel).getByRole("link", { name: "View official ISLRTC resource for Chlorophyll — opens in a new tab" });
+    expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=Oqrmn9kYESk");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+    expect(within(panel).getByText("External educational resource from the Indian Sign Language Research and Training Centre.")).toBeInTheDocument();
+    expect(within(panel).getByText("Developed jointly by CIET, NCERT and ISLRTC.")).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "Return to question" }));
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   });
 
   it("resets contradictory persisted recovery without opening or completing the concept", async () => {

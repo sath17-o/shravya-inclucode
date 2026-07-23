@@ -22,6 +22,7 @@ import {
 } from "./focusJourney";
 import { ReadingSettingsPanel } from "./readingPreferences";
 import {
+  resolveOfficialIslExternalResource,
   resolveTrustedExplanationAnnotation,
   TrustedTermDisclosure,
   trustedChlorophyllForRecovery,
@@ -787,6 +788,8 @@ function FocusRecoveryPanel({
   steps,
   stage,
   mode,
+  selectedContextId,
+  versionNumber,
   headingRef,
   onStage,
   onClose,
@@ -797,6 +800,8 @@ function FocusRecoveryPanel({
   steps: ReturnType<typeof buildFocusJourneySteps>;
   stage: FocusRecoveryStage;
   mode: FocusSupportMode | null;
+  selectedContextId: string | null;
+  versionNumber: number | null;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   onStage: (stage: FocusRecoveryStage) => void;
   onClose: (returnedToTry: boolean) => void;
@@ -821,7 +826,12 @@ function FocusRecoveryPanel({
       {stage === 1 ? <><p className="eyebrow">YOU ARE HERE</p><p>This is the idea you are working on now.</p></> : null}
       {stage === 2 ? <><h3>Important words</h3>{terms.length ? <ul className={`focus-recovery-words ${mode === "help_with_words" ? "priority" : ""}`}>{terms.map((term) => {
         const trustedTerm = trustedChlorophyllForRecovery([term]);
-        return <li key={term.id}>{trustedTerm ? <TrustedTermDisclosure term={trustedTerm} /> : <Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} />}</li>;
+        const resource = trustedTerm ? resolveOfficialIslExternalResource({
+          selectedContextId,
+          versionNumber,
+          glossaryTermId: trustedTerm.id,
+        }) : undefined;
+        return <li key={term.id}>{trustedTerm ? <TrustedTermDisclosure resource={resource} term={trustedTerm} /> : <Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} />}</li>;
       })}</ul> : <p>Word support is not available for this step yet.</p>}</> : null}
       {stage === 3 ? <><h3>Small cue</h3><Bilingual english={pack.cue.english} malayalam={pack.cue.malayalam} /></> : null}
       {stage === 4 ? <><h3>Concrete example</h3><Bilingual english={pack.example.english} malayalam={pack.example.malayalam} /></> : null}
@@ -907,7 +917,12 @@ export function StudentLessonPage() {
           material,
           glossaryTerms: lesson.glossary_terms,
         });
-        return <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><div className="pre-line trusted-explanation-copy">{annotation ? <>{annotation.before}<TrustedTermDisclosure term={annotation.term} />{annotation.after}</> : material.content}</div></article>;
+        const resource = annotation ? resolveOfficialIslExternalResource({
+          selectedContextId: state.data.selected_context_id,
+          versionNumber: state.data.version_number,
+          glossaryTermId: annotation.term.id,
+        }) : undefined;
+        return <article className="material-card" key={material.id}><p className="eyebrow">{material.material_type === "teacher_note" ? "Teacher explanation" : "Reference support"}</p><h3>{material.title}</h3><div className="pre-line trusted-explanation-copy">{annotation ? <>{annotation.before}<TrustedTermDisclosure resource={resource} term={annotation.term} />{annotation.after}</> : material.content}</div></article>;
       })}</div></section>
       <section className="student-section"><h2>Glossary</h2><div className="glossary-grid">{lesson.glossary_terms.map((term) => <article className="glossary-card" id={term.canonical_term === "Chlorophyll" ? "glossary-chlorophyll" : undefined} key={term.id}><h3><Bilingual english={term.canonical_term} malayalam={term.malayalam_support_label} /></h3><p>{term.definition}</p></article>)}</div>{chlorophyll ? <aside className="term-correction"><h3>Confirmed classroom term</h3><p><strong>{chlorophyll.canonical_term}</strong></p>{chlorophyll.malayalam_support_label ? <p>Malayalam: <strong lang="ml">{chlorophyll.malayalam_support_label}</strong></p> : null}</aside> : null}</section>
       <section className="student-section"><h2>Concept flow</h2><p>Follow the lesson from what plants need to the oxygen they release.</p><ConceptFlow lesson={lesson} /></section>
@@ -1198,7 +1213,7 @@ export function FocusJourneyPage() {
         <section className="focus-step-card focus-recovery-task">
           <h1 id="focus-step-title">{step.concept.title}</h1>
           {step.concept.malayalam_title ? <p className="focus-malayalam" lang="ml">{step.concept.malayalam_title}</p> : null}
-          <FocusRecoveryPanel headingRef={recoveryHeadingRef} lesson={lesson} mode={progress.supportMode} onClose={closeRecovery} onStage={setRecoveryStage} stage={recoveryStage} step={step} stepIndex={progress.currentStepIndex} steps={steps} />
+          <FocusRecoveryPanel headingRef={recoveryHeadingRef} lesson={lesson} mode={progress.supportMode} onClose={closeRecovery} onStage={setRecoveryStage} selectedContextId={state.data.selected_context_id} stage={recoveryStage} step={step} stepIndex={progress.currentStepIndex} steps={steps} versionNumber={state.data.version_number} />
         </section>
       </article>
     );

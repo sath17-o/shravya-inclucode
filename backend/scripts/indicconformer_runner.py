@@ -178,12 +178,19 @@ def validate_wav(audio: dict[str, Any], segments: list[dict[str, int]]) -> tuple
 def _lazy_model(model_path: Path):
     try:
         import torch
-        from transformers import AutoModel
+        from transformers import AutoConfig, AutoModel
     except ImportError as error:
         raise RunnerError("hybrid_runtime_dependency_unavailable") from error
     started = time.perf_counter()
-    model = AutoModel.from_pretrained(
-        str(model_path), trust_remote_code=True, local_files_only=True
+    config = AutoConfig.from_pretrained(
+        str(model_path),
+        trust_remote_code=True,
+        local_files_only=True,
+    )
+    config.ts_folder = str(model_path)
+    model = AutoModel.from_config(
+        config,
+        trust_remote_code=True,
     )
     if callable(getattr(model, "eval", None)):
         model.eval()

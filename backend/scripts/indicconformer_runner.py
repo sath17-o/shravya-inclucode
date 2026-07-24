@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import struct
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import time
 import wave
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -178,23 +180,46 @@ def validate_wav(audio: dict[str, Any], segments: list[dict[str, int]]) -> tuple
 def _lazy_model(model_path: Path):
     try:
         import torch
-        from transformers import AutoConfig, AutoModel
     except ImportError as error:
         raise RunnerError("hybrid_runtime_dependency_unavailable") from error
+    model_module_path = model_path / "model_onnx.py"
+    if not model_module_path.is_file():
+        raise RunnerError("local_hybrid_model_mismatch")
+    specification = importlib.util.spec_from_file_location(
+        "_shravya_pinned_indicconformer", model_module_path
+    )
+    if specification is None or specification.loader is None:
+        raise RunnerError("local_hybrid_model_mismatch")
     started = time.perf_counter()
-    config = AutoConfig.from_pretrained(
-        str(model_path),
-        trust_remote_code=True,
-        local_files_only=True,
-    )
-    config.ts_folder = str(model_path)
-    model = AutoModel.from_config(
-        config,
-        trust_remote_code=True,
-    )
+    try:
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+    except Exception as error:
+        raise RunnerError("local_hybrid_model_mismatch") from error
+    config_type = getattr(module, "IndicASRConfig", None)
+    model_type = getattr(module, "IndicASRModel", None)
+    if not callable(config_type) or not callable(model_type):
+        raise RunnerError("hybrid_model_contract_invalid")
+    try:
+        config = config_type(ts_folder=str(model_path))
+        model = model_type(config)
+    except Exception as error:
+        raise RunnerError("hybrid_model_contract_invalid") from error
     if callable(getattr(model, "eval", None)):
-        model.eval()
+        try:
+            model.eval()
+        except Exception as error:
+            raise RunnerError("hybrid_model_contract_invalid") from error
+    if not callable(model):
+        raise RunnerError("hybrid_model_contract_invalid")
     return torch, model, time.perf_counter() - started
+
+
+def _transformers_version() -> str:
+    try:
+        return version("transformers")
+    except PackageNotFoundError:
+        return "not-installed"
 
 
 def _model_text(
@@ -270,7 +295,7 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         "runtime": {
             "python_version": ".".join(map(str, sys.version_info[:3])),
             "torch_version": str(torch.__version__),
-            "transformers_version": __import__("transformers").__version__,
+            "transformers_version": _transformers_version(),
             "model_load_seconds": model_load_seconds,
             "inference_seconds": inference_seconds,
             "total_seconds": model_load_seconds + inference_seconds,

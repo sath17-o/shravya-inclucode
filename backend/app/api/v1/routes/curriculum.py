@@ -321,7 +321,8 @@ def transcript_response(revision):
                 device=evidence.device,
                 language_detected=evidence.language_detected,
                 inference_seconds=evidence.inference_seconds,
-                local_only=evidence.provider_mode == "local_faster_whisper",
+                local_only=evidence.provider_mode
+                in {"local_faster_whisper", "local_malayalam_hybrid"},
             )
             if evidence is not None
             else None

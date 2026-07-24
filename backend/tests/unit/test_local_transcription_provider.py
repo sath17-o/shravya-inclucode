@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -107,11 +108,29 @@ def test_model_load_failure_is_typed() -> None:
     assert error.value.code == "local_stt_model_load_failed"
 
 
+def test_local_whisper_loader_receives_the_explicit_offline_flag(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Loader:
+        def __init__(self, model, **kwargs) -> None:
+            captured["model"] = model
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=Loader))
+    LocalFasterWhisperTranscriptionProvider._load_model(_configuration())
+    assert captured["local_files_only"] is False
+
+    offline = LocalWhisperConfiguration("small", "cpu", "int8", "ml", True, 5, True, True, True)
+    LocalFasterWhisperTranscriptionProvider._load_model(offline)
+    assert captured["local_files_only"] is True
+
+
 def test_provider_selection_is_explicit_and_shared_only_for_matching_local_settings(
     tmp_path,
 ) -> None:
     clear_local_provider_cache_for_tests()
     local = Settings(provider_mode=ProviderMode.LOCAL_FASTER_WHISPER)
+    hybrid = Settings(provider_mode=ProviderMode.LOCAL_MALAYALAM_HYBRID)
     deterministic = Settings(provider_mode=ProviderMode.DETERMINISTIC_DEMO)
     first = local_provider_for_settings(local)
     second = local_provider_for_settings(local)
@@ -119,6 +138,9 @@ def test_provider_selection_is_explicit_and_shared_only_for_matching_local_setti
     assert first is second
     assert provider_for_settings(deterministic, tmp_path / "fixture.json").__class__.__name__ == (
         "DeterministicDemoTranscriptionProvider"
+    )
+    assert provider_for_settings(hybrid, tmp_path / "fixture.json").__class__.__name__ == (
+        "LocalMalayalamHybridTranscriptionProvider"
     )
 
 

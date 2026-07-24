@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 from app.contracts.enums import SourceStatus
 from app.models.foundation import TranscriptRevision
+from app.services.malayalam_hybrid_provider import (
+    LOCAL_MALAYALAM_HYBRID_PROVENANCE,
+    LOCAL_MALAYALAM_HYBRID_PROVIDER,
+    LOCAL_MALAYALAM_HYBRID_VERSION,
+)
 from app.services.transcription_provider import (
     LOCAL_FASTER_WHISPER_PROVENANCE,
     LOCAL_FASTER_WHISPER_PROVIDER,
@@ -37,6 +42,14 @@ def recognised_provenance(revision: TranscriptRevision) -> ProvenancePolicyResul
     version = (revision.provider_version or "").strip()
     label = revision.provenance_label.strip()
 
+    if (
+        revision.source_status is SourceStatus.LOCAL_TEACHER
+        and provider == LOCAL_MALAYALAM_HYBRID_PROVIDER
+        and version == LOCAL_MALAYALAM_HYBRID_VERSION
+        and label == LOCAL_MALAYALAM_HYBRID_PROVENANCE
+        and revision.copied_from_transcript_revision_id is None
+    ):
+        return ProvenancePolicyResult(True)
     if (
         revision.source_status is SourceStatus.LOCAL_TEACHER
         and provider == LOCAL_FASTER_WHISPER_PROVIDER

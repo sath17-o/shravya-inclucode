@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -69,8 +69,13 @@ class ProviderTranscription:
     transcription_completed_at: datetime
     model_load_seconds: float | None
     inference_seconds: float
+    raw_evidence_payload: Mapping[str, object] | None = None
 
     def raw_output(self) -> dict[str, object]:
+        if self.raw_evidence_payload is not None:
+            # Evidence is immutable once written. Round-tripping through JSON returns a
+            # detached, JSON-safe copy without exposing a mutable provider-owned object.
+            return json.loads(json.dumps(self.raw_evidence_payload, ensure_ascii=False))
         return {
             "segments": [
                 {
@@ -167,6 +172,7 @@ class LocalWhisperConfiguration:
     beam_size: int
     vad_filter: bool
     word_timestamps: bool
+    local_files_only: bool = False
 
     @classmethod
     def from_settings(cls, settings: Settings) -> LocalWhisperConfiguration:
@@ -179,6 +185,7 @@ class LocalWhisperConfiguration:
             beam_size=settings.whisper_beam_size,
             vad_filter=settings.whisper_vad,
             word_timestamps=settings.whisper_word_timestamps,
+            local_files_only=False,
         )
 
 
@@ -291,6 +298,7 @@ class LocalFasterWhisperTranscriptionProvider:
             configuration.model,
             device=configuration.device,
             compute_type=configuration.compute_type,
+            local_files_only=configuration.local_files_only,
         )
 
     @staticmethod
@@ -383,6 +391,12 @@ _shared_local_providers: dict[
 
 def local_provider_for_settings(settings: Settings) -> LocalFasterWhisperTranscriptionProvider:
     configuration = LocalWhisperConfiguration.from_settings(settings)
+    return local_provider_for_configuration(configuration)
+
+
+def local_provider_for_configuration(
+    configuration: LocalWhisperConfiguration,
+) -> LocalFasterWhisperTranscriptionProvider:
     with _shared_provider_lock:
         provider = _shared_local_providers.get(configuration)
         if provider is None:
@@ -396,6 +410,10 @@ def provider_for_settings(settings: Settings, manifest_path: Path) -> Transcript
         return DeterministicDemoTranscriptionProvider(manifest_path)
     if settings.provider_mode is ProviderMode.LOCAL_FASTER_WHISPER:
         return local_provider_for_settings(settings)
+    if settings.provider_mode is ProviderMode.LOCAL_MALAYALAM_HYBRID:
+        from app.services.malayalam_hybrid_provider import hybrid_provider_for_settings
+
+        return hybrid_provider_for_settings(settings)
     raise DomainError("provider_mode_invalid", "audio.provider_mode_invalid", "validation")
 
 
@@ -404,6 +422,9 @@ def clear_local_provider_cache_for_tests() -> None:
 
     with _shared_provider_lock:
         _shared_local_providers.clear()
+    from app.services.malayalam_hybrid_provider import clear_hybrid_provider_cache_for_tests
+
+    clear_hybrid_provider_cache_for_tests()
 
 
 def raw_output_json(result: ProviderTranscription) -> str:

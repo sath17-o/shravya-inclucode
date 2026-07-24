@@ -47,6 +47,10 @@ from app.models.foundation import (
     TranscriptSegment,
     utcnow,
 )
+from app.services.malayalam_hybrid_provider import (
+    LOCAL_MALAYALAM_HYBRID_PROVENANCE,
+    LOCAL_MALAYALAM_HYBRID_PROVIDER,
+)
 from app.services.teacher_review import assert_context_mutable
 from app.services.transcript_provenance import (
     DETERMINISTIC_DEMO_PROVENANCE,
@@ -63,6 +67,7 @@ from app.services.transcript_quality import TranscriptQualityFinding, evaluate_t
 from app.services.transcription_provider import (
     DETERMINISTIC_DEMO_PROVIDER,
     LOCAL_FASTER_WHISPER_PROVENANCE,
+    LOCAL_FASTER_WHISPER_PROVIDER,
     DeterministicDemoTranscriptionProvider,
     ProviderTranscription,
     TranscriptionInput,
@@ -535,6 +540,10 @@ class AudioWorkflowService:
             self._session.commit()
             return job
         try:
+            provenance = self._provider_provenance(result)
+        except DomainError as error:
+            return self._fail_transcription_job(job, recording, error.code)
+        try:
             revision = self._new_revision(
                 recording,
                 tuple(
@@ -553,7 +562,7 @@ class AudioWorkflowService:
                 ),
                 provider_name=result.provider_implementation,
                 provider_version=result.provider_version,
-                provenance=self._provider_provenance(result),
+                provenance=provenance,
                 evidence=(
                     None
                     if result.provider_implementation == DETERMINISTIC_DEMO_PROVIDER
@@ -1387,11 +1396,19 @@ class AudioWorkflowService:
 
     @staticmethod
     def _provider_provenance(result: ProviderTranscription) -> str:
-        return (
-            DETERMINISTIC_DEMO_PROVENANCE
-            if result.provider_implementation == DETERMINISTIC_DEMO_PROVIDER
-            else LOCAL_FASTER_WHISPER_PROVENANCE
-        )
+        provenance_by_provider = {
+            DETERMINISTIC_DEMO_PROVIDER: DETERMINISTIC_DEMO_PROVENANCE,
+            LOCAL_FASTER_WHISPER_PROVIDER: LOCAL_FASTER_WHISPER_PROVENANCE,
+            LOCAL_MALAYALAM_HYBRID_PROVIDER: LOCAL_MALAYALAM_HYBRID_PROVENANCE,
+        }
+        provenance = provenance_by_provider.get(result.provider_implementation)
+        if provenance is None:
+            raise DomainError(
+                "provider_implementation_invalid",
+                "audio.provider_implementation_invalid",
+                "validation",
+            )
+        return provenance
 
     def _fail_transcription_job(
         self, job: ProcessingJob, recording: LectureAudio, error_code: str

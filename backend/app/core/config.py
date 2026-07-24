@@ -10,11 +10,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ProviderMode(StrEnum):
     DETERMINISTIC_DEMO = "deterministic_demo"
     LOCAL_FASTER_WHISPER = "local_faster_whisper"
+    LOCAL_MALAYALAM_HYBRID = "local_malayalam_hybrid"
 
 
 _LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[a-z]{2,4})?$")
 _WHISPER_DEVICES = {"cpu", "cuda", "auto"}
 _WHISPER_COMPUTE_TYPES = {"int8", "int8_float16", "int16", "float16", "float32"}
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -37,6 +39,12 @@ class Settings(BaseSettings):
     whisper_beam_size: int = Field(default=5, ge=1, le=20)
     whisper_vad: bool = True
     whisper_word_timestamps: bool = True
+    hybrid_python_executable: Path = _REPOSITORY_ROOT / ".venv-indic-asr/Scripts/python.exe"
+    hybrid_runner_script: Path = _REPOSITORY_ROOT / "backend/scripts/indicconformer_runner.py"
+    hybrid_model_path: Path = _REPOSITORY_ROOT / (
+        ".runtime/models/indic-conformer-600m-multilingual/e9b71b369c048e2c6b634d4c131061c34e441179"
+    )
+    hybrid_timeout_seconds: int = Field(default=90, ge=10, le=600)
 
     @field_validator("provider_mode", mode="before")
     @classmethod
@@ -86,6 +94,17 @@ class Settings(BaseSettings):
         if not _LANGUAGE_PATTERN.fullmatch(normalized):
             raise ValueError("Whisper language must be a lowercase language code.")
         return normalized
+
+    @field_validator(
+        "hybrid_python_executable", "hybrid_runner_script", "hybrid_model_path", mode="before"
+    )
+    @classmethod
+    def resolve_hybrid_path(cls, value: str | Path) -> Path:
+        raw = str(value)
+        if not raw.strip() or "\x00" in raw:
+            raise ValueError("Hybrid runtime path must be non-empty and contain no NUL characters.")
+        path = Path(raw)
+        return path if path.is_absolute() else _REPOSITORY_ROOT / path
 
 
 @lru_cache

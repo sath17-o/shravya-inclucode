@@ -45,7 +45,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <nav aria-label="Primary" className="primary-nav">
         <Link to="/teacher">Teacher review</Link>
-        <Link to="/student">Student lesson</Link>
+        <Link end to="/student">Student lesson</Link>
+        <Link to="/student/revisions">Revision</Link>
       </nav>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>

@@ -6,11 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { AppProvider } from "../app/AppContext";
 import type { AudioWorkflowSummary } from "../api/contracts";
-import { createCurriculumFetch } from "./curriculumFixtures";
+import { course, createCurriculumFetch } from "./curriculumFixtures";
 
-function renderApp(initialEntry: "/teacher" | "/student", fetchMock = createCurriculumFetch()) {
+function renderApp(initialEntry: string, fetchMock = createCurriculumFetch()) {
   vi.stubGlobal("fetch", fetchMock);
   return render(<MemoryRouter initialEntries={[initialEntry]}><AppProvider><App /></AppProvider></MemoryRouter>);
+}
+
+function requestedUrl(input: unknown) {
+  return typeof input === "object" && input !== null && "url" in input
+    ? String(input.url)
+    : String(input);
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -61,6 +67,43 @@ describe("Phase 3A curriculum experience", () => {
     const navigation = screen.getByRole("navigation", { name: "Primary" });
     expect(within(navigation).getByRole("link", { name: "Teacher review" })).toHaveClass("active");
     expect(within(navigation).getByRole("link", { name: "Student lesson" })).not.toHaveClass("active");
+  });
+
+  it("shows only approved revisions with student-safe navigation and opens the exact revision", async () => {
+    const user = userEvent.setup();
+    const fetchMock = createCurriculumFetch();
+    renderApp("/student/revisions", fetchMock);
+    expect(await screen.findByRole("heading", { name: "Revision" })).toBeInTheDocument();
+    const roleSwitcher = screen.getByRole("group", { name: "Demo role switcher" });
+    expect(within(roleSwitcher).getByRole("button", { name: "Student" })).toHaveAttribute("aria-pressed", "true");
+    const navigation = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(navigation).getByRole("link", { name: "Revision" })).toHaveClass("active");
+    expect(within(navigation).getByRole("link", { name: "Student lesson" })).not.toHaveClass("active");
+    expect(screen.getAllByText("Teacher approved · 16 Jul 2026")).toHaveLength(1);
+    expect(screen.getByText("Trusted version 1")).toBeInTheDocument();
+    expect(screen.queryByText("Trusted version 2")).not.toBeInTheDocument();
+    const openRevision = screen.getByRole("link", { name: "Open Photosynthesis in Plants revision approved 16 Jul 2026" });
+    expect(openRevision).toHaveTextContent("Open revision");
+    await user.click(openRevision);
+    expect(await screen.findByText("Teacher-approved revision")).toBeInTheDocument();
+    expect(screen.getByText("Trusted version 1")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => requestedUrl(url).endsWith(`/student/courses/${course.id}/revisions/context-v1`))).toBe(true);
+    const backToRevision = screen.getByRole("link", { name: "Back to Revision" });
+    expect(backToRevision).toHaveAttribute("href", "/student/revisions");
+    await user.click(backToRevision);
+    expect(await screen.findByRole("heading", { name: "Revision" })).toBeInTheDocument();
+  });
+
+  it("keeps a revision Focus Journey scoped to its selected approved context", async () => {
+    const user = userEvent.setup();
+    const fetchMock = createCurriculumFetch();
+    renderApp("/student/revisions/context-v1/focus", fetchMock);
+    expect(await screen.findByRole("heading", { name: "How should Shravya support you right now?" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => requestedUrl(url).endsWith(`/student/courses/${course.id}/revisions/context-v1`))).toBe(true);
+    await user.click(screen.getAllByRole("radio")[0]);
+    await user.click(screen.getByRole("button", { name: "Continue with this support" }));
+    await user.click(screen.getByRole("button", { name: "Return to lesson" }));
+    expect(await screen.findByText("Teacher-approved revision")).toBeInTheDocument();
   });
 
   it("keeps the skip link keyboard reachable", async () => {

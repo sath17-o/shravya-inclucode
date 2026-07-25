@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
 import { apiBaseUrl, ApiError, curriculumApi } from "../api/client";
-import type { AudioWorkflowSummary, Completeness, ContextDetail, ContextSummary, Lesson, Recording, StudentLesson, StudentOverview, TranscriptRevision, TranscriptSegmentInput } from "../api/contracts";
+import type { AudioWorkflowSummary, Completeness, ContextDetail, ContextSummary, Lesson, Recording, StudentLesson, StudentOverview, StudentRevisionLibrary, TranscriptRevision, TranscriptSegmentInput } from "../api/contracts";
 import { useAppContext } from "../app/AppContext";
 import { Button, ErrorAlert, StatusMessage } from "../components/primitives";
 import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../demo/config";
@@ -852,23 +852,35 @@ function FocusRecoveryPanel({
   </section>;
 }
 
-export function StudentLessonPage() {
-  const navigate = useNavigate();
+function formatApprovalDate(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
+export function RevisionLibraryPage() {
   const { curriculumRevision } = useAppContext();
-  const [state, setState] = useState<AsyncState<StudentOverview>>({ kind: "loading" });
+  const [state, setState] = useState<AsyncState<StudentRevisionLibrary>>({ kind: "loading" });
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ kind: "loading" });
     try {
-      setState({ kind: "ready", data: await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal) });
+      setState({ kind: "ready", data: await curriculumApi.studentRevisions(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal) });
     } catch (error) {
       if (!signal?.aborted) setState({ kind: "error", error: safeError(error) });
     }
   }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     const request = async () => {
       try {
-        const data = await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, controller.signal);
+        const data = await curriculumApi.studentRevisions(
+          PHOTOSYNTHESIS_DEMO_COURSE_ID,
+          controller.signal,
+        );
         if (!controller.signal.aborted) setState({ kind: "ready", data });
       } catch (error) {
         if (!controller.signal.aborted) setState({ kind: "error", error: safeError(error) });
@@ -877,6 +889,72 @@ export function StudentLessonPage() {
     void request();
     return () => controller.abort();
   }, [curriculumRevision]);
+
+  if (state.kind === "loading") return <LoadingState label="Loading your approved revisions…" />;
+  if (state.kind === "error") return <ErrorState error={state.error} onRetry={() => void load()} />;
+  return (
+    <article className="student-page revision-library">
+      <header className="student-hero">
+        <p className="eyebrow">{state.data.course.title}</p>
+        <h1>Revision</h1>
+        <p>Return to your teacher-approved classes, arranged by date.</p>
+        <p className="trusted-version">Only teacher-approved classroom versions appear here.</p>
+      </header>
+      {state.data.revisions.length === 0 ? (
+        <section className="empty-state"><h2>No approved revisions yet</h2><p>Your teacher-approved classes will appear here.</p></section>
+      ) : (
+        <ol className="revision-list" aria-label="Teacher-approved revisions">
+          {state.data.revisions.map((revision) => {
+            const date = formatApprovalDate(revision.approved_at);
+            return <li key={revision.context_id}>
+              <article className="revision-card">
+                <div><p className="eyebrow">{state.data.course.subject} · Class {state.data.course.class_level}</p><h2>{revision.lesson_title}</h2><p>{revision.chapter_title}</p></div>
+                <p><time dateTime={revision.approved_at}>Teacher approved · {date}</time></p>
+                <p>Trusted version {revision.version_number}</p>
+                {revision.is_current ? <span className="trust-badge">Current</span> : null}
+                <RouterLink aria-label={`Open ${revision.lesson_title} revision approved ${date}`} className="button revision-open-link" to={`/student/revisions/${revision.context_id}`}>Open revision</RouterLink>
+              </article>
+            </li>;
+          })}
+        </ol>
+      )}
+    </article>
+  );
+}
+
+export function StudentLessonPage() {
+  const navigate = useNavigate();
+  const { contextId } = useParams();
+  const { curriculumRevision } = useAppContext();
+  const isRevision = Boolean(contextId);
+  const focusPath = contextId ? `/student/revisions/${contextId}/focus` : "/student/focus";
+  const [state, setState] = useState<AsyncState<StudentOverview>>({ kind: "loading" });
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ kind: "loading" });
+    try {
+      const data = contextId
+        ? await curriculumApi.studentRevision(PHOTOSYNTHESIS_DEMO_COURSE_ID, contextId, signal)
+        : await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal);
+      setState({ kind: "ready", data });
+    } catch (error) {
+      if (!signal?.aborted) setState({ kind: "error", error: safeError(error) });
+    }
+  }, [contextId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const request = async () => {
+      try {
+        const data = contextId
+          ? await curriculumApi.studentRevision(PHOTOSYNTHESIS_DEMO_COURSE_ID, contextId, controller.signal)
+          : await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, controller.signal);
+        if (!controller.signal.aborted) setState({ kind: "ready", data });
+      } catch (error) {
+        if (!controller.signal.aborted) setState({ kind: "error", error: safeError(error) });
+      }
+    };
+    void request();
+    return () => controller.abort();
+  }, [contextId, curriculumRevision]);
 
   if (state.kind === "loading") return <LoadingState label="Loading your teacher-approved lesson…" />;
   if (state.kind === "error") return <ErrorState error={state.error} onRetry={() => void load()} />;
@@ -892,10 +970,11 @@ export function StudentLessonPage() {
     <article className="student-page">
       <header className="student-hero">
         <p className="eyebrow">{state.data.course.title}</p>
-        <span className="trust-badge">Teacher-approved lesson</span>
+        <span className="trust-badge">{isRevision ? "Teacher-approved revision" : "Teacher-approved lesson"}</span>
         <h1>{lesson.title}</h1>
         {photosynthesis?.malayalam_support_label ? <p className="hero-malayalam" lang="ml">{photosynthesis.malayalam_support_label}</p> : null}
         <p className="trusted-version">Trusted version {state.data.version_number}</p>
+        {contextId ? <RouterLink className="button revision-back-link" to="/student/revisions">Back to Revision</RouterLink> : null}
       </header>
       {lesson.approved_transcript ? <section className="student-section approved-transcript" aria-labelledby="approved-transcript-title"><div><p className="eyebrow">Trusted classroom record</p><h2 id="approved-transcript-title">Approved classroom transcript</h2><p>{lesson.approved_transcript.provenance_label}</p><p>Trusted classroom record · version {lesson.approved_transcript.trusted_context_version}</p></div><ol className="transcript-segments">{lesson.approved_transcript.segments.map((segment) => <li key={segment.id}><time>{(segment.start_ms / 1000).toFixed(1)}–{(segment.end_ms / 1000).toFixed(1)}s</time><span lang="ml">{segment.text.includes("Chlorophyll") ? <><a href="#glossary-chlorophyll" className="glossary-link">{segment.text}</a></> : segment.text}</span></li>)}</ol></section> : null}
       <section className="student-section orientation"><h2>Lesson orientation</h2><p className="pre-line">{lesson.description}</p><h3>What you will learn</h3><ol className="stack-list">{lesson.objectives.map((objective) => <li key={objective.id}><Bilingual english={objective.objective_text} malayalam={objective.malayalam_text} /></li>)}</ol></section>
@@ -904,7 +983,7 @@ export function StudentLessonPage() {
         <h2 id="focus-entry-title">Help me focus</h2>
         <p>Learn this lesson one small step at a time.</p>
         <p className="quiet-copy">Designed to reduce information load and support step-by-step learning.</p>
-        <Button onClick={() => navigate("/student/focus")} type="button">{hasStartedFocusJourney ? "Resume Focus Journey" : "Start Focus Journey"}</Button>
+        <Button onClick={() => navigate(focusPath)} type="button">{hasStartedFocusJourney ? "Resume Focus Journey" : "Start Focus Journey"}</Button>
         <details className="lesson-reading-settings">
           <summary>Reading settings</summary>
           <ReadingSettingsPanel />
@@ -933,7 +1012,9 @@ export function StudentLessonPage() {
 
 export function FocusJourneyPage() {
   const navigate = useNavigate();
+  const { contextId } = useParams();
   const { curriculumRevision } = useAppContext();
+  const returnPath = contextId ? `/student/revisions/${contextId}` : "/student";
   const [state, setState] = useState<AsyncState<StudentOverview>>({ kind: "loading" });
   const [progress, setProgress] = useState<FocusJourneyProgress>(() => newFocusJourneyProgress());
   const [restartRequested, setRestartRequested] = useState(false);
@@ -957,7 +1038,9 @@ export function FocusJourneyPage() {
     };
   }, []);
   const requestOverview = useCallback(async (signal?: AbortSignal) => {
-    const data = await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal);
+    const data = contextId
+      ? await curriculumApi.studentRevision(PHOTOSYNTHESIS_DEMO_COURSE_ID, contextId, signal)
+      : await curriculumApi.studentOverview(PHOTOSYNTHESIS_DEMO_COURSE_ID, signal);
     const approvedLesson = data.chapters[0]?.lessons[0];
     const approvedSteps = approvedLesson ? buildFocusJourneySteps(approvedLesson) : [];
     const approvedKey = focusJourneyStorageKey(data);
@@ -967,7 +1050,7 @@ export function FocusJourneyPage() {
       progress: stored?.progress ?? newFocusJourneyProgress(approvedKey ?? ""),
       persistenceAvailable: stored?.persistenceAvailable ?? true,
     };
-  }, []);
+  }, [contextId]);
 
   const load = async () => {
     setState({ kind: "loading" });
@@ -1050,7 +1133,7 @@ export function FocusJourneyPage() {
   if (state.kind === "loading") return <LoadingState label="Loading your Focus Journey…" />;
   if (state.kind === "error") return <ErrorState error={state.error} onRetry={() => void load()} />;
   if (!state.data.is_ready || !lesson || !storageKey || steps.length !== 5) {
-    return <section className="empty-state focus-empty-state"><h1>Focus Journey unavailable</h1><p>Your teacher-approved lesson is not ready for this pathway yet.</p><Button onClick={() => navigate("/student")} type="button">Return to full lesson</Button></section>;
+    return <section className="empty-state focus-empty-state"><h1>Focus Journey unavailable</h1><p>Your teacher-approved lesson is not ready for this pathway yet.</p><Button onClick={() => navigate(returnPath)} type="button">Return to full lesson</Button></section>;
   }
 
   const chooseSupport = (supportMode: FocusSupportMode) => {
@@ -1100,7 +1183,7 @@ export function FocusJourneyPage() {
           <p className="focus-preview-expectation">One idea and one small question at a time.</p>
           <div className="focus-actions">
             <Button className="focus-primary-action" onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Start with step 1</Button>
-            <Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Return to lesson</Button>
+            <Button className="focus-secondary-action" onClick={() => navigate(returnPath)} type="button">Return to lesson</Button>
           </div>
         </section>
       </article>
@@ -1177,7 +1260,7 @@ export function FocusJourneyPage() {
           <div className="focus-actions">
             <Button onClick={() => updateProgress((current) => ({ ...current, currentStepIndex: 0, isComplete: false, paused: false, screen: "concept" }))} type="button">Review this journey</Button>
             <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
-            <Button onClick={() => navigate("/student")} type="button">Return to full lesson</Button>
+            <Button onClick={() => navigate(returnPath)} type="button">Return to full lesson</Button>
           </div>
         </section>
       </article>
@@ -1195,7 +1278,7 @@ export function FocusJourneyPage() {
           <div className="focus-actions">
             <Button onClick={() => updateProgress((current) => ({ ...current, paused: false }))} type="button">Resume journey</Button>
             <Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button>
-            <Button onClick={() => navigate("/student")} type="button">Exit to lesson</Button>
+            <Button onClick={() => navigate(returnPath)} type="button">Exit to lesson</Button>
           </div>
         </section>
       </article>
@@ -1253,7 +1336,7 @@ export function FocusJourneyPage() {
           <button aria-controls="focus-utility-actions" aria-expanded={utilityExpanded} className="button focus-secondary-action" onClick={() => { setUtilityExpanded((current) => !current); setRestartRequested(false); }} type="button">More</button>
           {utilityExpanded ? <div className="focus-utility-actions" id="focus-utility-actions">
             {restartRequested ? <section aria-labelledby="restart-confirm-title" className="focus-restart-confirm" role="dialog"><h2 id="restart-confirm-title" ref={restartConfirmRef} tabIndex={-1}>Restart this journey?</h2><p>Your learning and recovery progress for this journey will be cleared.</p><div className="focus-actions"><Button className="focus-primary-action" onClick={() => { restartFocusRequested.current = true; setRestartRequested(false); }} type="button">Keep my progress</Button><Button className="focus-secondary-action" onClick={restartJourney} type="button">Restart journey</Button></div></section> : <>
-              <div className="focus-utility-normal"><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button><Button className="focus-secondary-action" onClick={() => navigate("/student")} type="button">Exit to full lesson</Button></div>
+              <div className="focus-utility-normal"><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, paused: true }))} type="button">Pause journey</Button><Button className="focus-secondary-action" onClick={() => updateProgress((current) => ({ ...current, screen: "support-choice", paused: false }))} type="button">Change support</Button><Button className="focus-secondary-action" onClick={() => navigate(returnPath)} type="button">Exit to full lesson</Button></div>
               <div className="focus-reading-settings"><ReadingSettingsPanel /></div>
               <div className="focus-utility-restart"><button className="button focus-secondary-action" onClick={() => setRestartRequested(true)} ref={restartButtonRef} type="button">Restart journey</button></div>
             </>}

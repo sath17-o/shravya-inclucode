@@ -23,6 +23,18 @@ def assert_forbidden_keys_absent(value: object, forbidden: set[str]) -> None:
             assert_forbidden_keys_absent(child, forbidden)
 
 
+STUDENT_REVISION_NOT_FOUND = {
+    "status": "error",
+    "code": "student_revision_not_found",
+    "message": "student.revision_not_found",
+    "message_key": "student.revision_not_found",
+    "details": {},
+    "recoverable": True,
+    "next_actions": [],
+    "job_id": None,
+}
+
+
 def setup_contexts_for_selection(migrated_api, second_status: TeacherReviewStatus):
     with migrated_api.session_factory() as session:
         first = complete_photosynthesis_context(
@@ -170,3 +182,125 @@ def test_student_filters_unapproved_children_and_prevents_context_and_teacher_le
     assert other_id not in serialized
     assert "Other course marker" not in serialized
     assert re.search(r"\bchlorophil\b", serialized) is None
+
+
+def test_student_revision_library_is_approved_only_ordered_and_safe(migrated_api) -> None:
+    course_id, first_id, second_id, other_id = setup_contexts_for_selection(
+        migrated_api, TeacherReviewStatus.APPROVED
+    )
+
+    response = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/revisions")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["course"]["id"] == course_id
+    assert [item["context_id"] for item in data["revisions"]] == [first_id, second_id]
+    assert [item["is_current"] for item in data["revisions"]] == [False, True]
+    assert data["revisions"][0]["approved_at"] == "2026-07-18T00:00:00"
+    assert data["revisions"][1]["approved_at"] == "2026-07-15T00:00:00"
+    assert data["revisions"][0]["chapter_title"] == "Photosynthesis in Plants"
+    assert data["revisions"][0]["lesson_title"] == "Plants make food"
+    assert_forbidden_keys_absent(
+        data,
+        {
+            "teacher_review_status",
+            "reviewer_note",
+            "submitted_at",
+            "copied_from_context_version_id",
+            "review_events",
+            "misrecognitions",
+            "suggestions",
+            "quality",
+        },
+    )
+    assert other_id not in response.text
+
+
+def test_student_revision_library_returns_empty_for_a_course_without_approved_contexts(
+    migrated_api,
+) -> None:
+    with migrated_api.session_factory() as session:
+        course_model = course(title="No approved revisions")
+        session.add(course_model)
+        session.commit()
+        course_id = course_model.id
+
+    response = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/revisions")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "course": {
+            "id": course_id,
+            "title": "No approved revisions",
+            "subject": "Science",
+            "class_level": 7,
+            "grade_band": "5-7",
+        },
+        "revisions": [],
+    }
+
+
+def test_student_revision_detail_projects_only_the_requested_approved_context(migrated_api) -> None:
+    course_id, first_id, second_id, other_id = setup_contexts_for_selection(
+        migrated_api, TeacherReviewStatus.APPROVED
+    )
+
+    response = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/revisions/{first_id}")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["selected_context_id"] == first_id
+    assert data["version_number"] == 1
+    assert data["approved_at"] == "2026-07-18T00:00:00"
+    assert data["chapters"][0]["lessons"][0]["title"] == "Plants make food"
+    assert other_id not in response.text
+    assert second_id not in response.text
+    assert_forbidden_keys_absent(
+        data,
+        {
+            "teacher_review_status",
+            "reviewer_note",
+            "submitted_at",
+            "copied_from_context_version_id",
+            "review_events",
+            "misrecognitions",
+            "suggestions",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "hidden_status", [TeacherReviewStatus.DRAFT, TeacherReviewStatus.NEEDS_REVIEW]
+)
+def test_student_revision_detail_hides_drafts_needs_review_other_courses_and_unknown_contexts(
+    migrated_api, hidden_status: TeacherReviewStatus
+) -> None:
+    course_id, first_id, hidden_id, other_id = setup_contexts_for_selection(
+        migrated_api, hidden_status
+    )
+    for context_id in (hidden_id, other_id, "missing"):
+        response = migrated_api.client.get(
+            f"/api/v1/student/courses/{course_id}/revisions/{context_id}"
+        )
+        assert response.status_code == 404
+        assert response.json() == STUDENT_REVISION_NOT_FOUND
+    assert first_id != hidden_id
+
+
+def test_student_revision_hides_approved_context_without_an_approval_date(migrated_api) -> None:
+    with migrated_api.session_factory() as session:
+        complete = complete_photosynthesis_context(
+            session, version_number=1, status=TeacherReviewStatus.APPROVED
+        )
+        complete.context.approved_at = None
+        session.commit()
+        course_id = complete.course.id
+        context_id = complete.context.id
+
+    library = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/revisions")
+    detail = migrated_api.client.get(f"/api/v1/student/courses/{course_id}/revisions/{context_id}")
+
+    assert library.status_code == 200
+    assert library.json()["data"]["revisions"] == []
+    assert detail.status_code == 404
+    assert detail.json() == STUDENT_REVISION_NOT_FOUND

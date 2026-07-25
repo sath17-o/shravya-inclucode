@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.contracts.enums import QualityStatus, TeacherReviewStatus
 from app.contracts.teacher_review import DomainError
-from app.models.foundation import Chapter, Lesson
+from app.models.foundation import Chapter, Course, CourseContextVersion, Lesson
 from app.repositories.curriculum import CurriculumRepository
 from app.services.transcript_provenance import recognised_provenance
 from app.services.transcript_quality import unresolved_suggestion_count
@@ -164,6 +164,22 @@ class StudentCurriculumProjection:
     chapters: tuple[StudentChapterProjection, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class StudentRevisionSummaryProjection:
+    context_id: str
+    version_number: int
+    approved_at: datetime
+    chapter_title: str
+    lesson_title: str
+    is_current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StudentRevisionLibraryProjection:
+    course: StudentCourseProjection
+    revisions: tuple[StudentRevisionSummaryProjection, ...]
+
+
 class StudentCurriculumService:
     def __init__(self, repository: CurriculumRepository) -> None:
         self._repository = repository
@@ -182,16 +198,87 @@ class StudentCurriculumService:
         course = self._repository.get_course(course_id)
         if course is None:
             raise DomainError("course_not_found", "course.not_found", "not_found")
-        course_projection = StudentCourseProjection(
+        course_projection = self._course_projection(course)
+        context = self._repository.get_highest_approved_context(course_id)
+        if context is None:
+            return StudentCurriculumProjection(course=course_projection, context=None, chapters=())
+        return self._projection_for_context(course_projection, context)
+
+    def get_revision_library(self, course_id: str) -> StudentRevisionLibraryProjection:
+        course = self._repository.get_course(course_id)
+        if course is None:
+            raise DomainError("course_not_found", "course.not_found", "not_found")
+        visible: list[
+            tuple[CourseContextVersion, StudentChapterProjection, StudentLessonProjection]
+        ] = []
+        for context in self._repository.list_approved_contexts_with_graph(course_id):
+            projection = self._projection_for_context(self._course_projection(course), context)
+            first_lesson = self._first_projected_lesson(projection)
+            if context.approved_at is not None and first_lesson is not None:
+                visible.append((context, *first_lesson))
+        current_context_id = (
+            max(visible, key=lambda item: (item[0].version_number, item[0].id))[0].id
+            if visible
+            else None
+        )
+        return StudentRevisionLibraryProjection(
+            course=self._course_projection(course),
+            revisions=tuple(
+                StudentRevisionSummaryProjection(
+                    context_id=context.id,
+                    version_number=context.version_number,
+                    approved_at=context.approved_at,
+                    chapter_title=chapter.title,
+                    lesson_title=lesson.title,
+                    is_current=context.id == current_context_id,
+                )
+                for context, chapter, lesson in visible
+            ),
+        )
+
+    def get_approved_revision_projection(
+        self, course_id: str, context_version_id: str
+    ) -> StudentCurriculumProjection:
+        course = self._repository.get_course(course_id)
+        if course is None:
+            raise DomainError("course_not_found", "course.not_found", "not_found")
+        context = self._repository.get_approved_context_for_course_with_graph(
+            course_id, context_version_id
+        )
+        if context is None:
+            raise DomainError(
+                "student_revision_not_found", "student.revision_not_found", "not_found"
+            )
+        projection = self._projection_for_context(self._course_projection(course), context)
+        if self._first_projected_lesson(projection) is None:
+            raise DomainError(
+                "student_revision_not_found", "student.revision_not_found", "not_found"
+            )
+        return projection
+
+    @staticmethod
+    def _first_projected_lesson(
+        projection: StudentCurriculumProjection,
+    ) -> tuple[StudentChapterProjection, StudentLessonProjection] | None:
+        for chapter in projection.chapters:
+            if chapter.lessons:
+                return chapter, chapter.lessons[0]
+        return None
+
+    @staticmethod
+    def _course_projection(course: Course) -> StudentCourseProjection:
+        return StudentCourseProjection(
             id=course.id,
             title=course.title,
             subject=course.subject,
             class_level=course.class_level,
             grade_band=course.grade_band,
         )
-        context = self._repository.get_highest_approved_context(course_id)
-        if context is None:
-            return StudentCurriculumProjection(course=course_projection, context=None, chapters=())
+
+    @staticmethod
+    def _projection_for_context(
+        course_projection: StudentCourseProjection, context: CourseContextVersion
+    ) -> StudentCurriculumProjection:
         return StudentCurriculumProjection(
             course=course_projection,
             context=StudentContextProjection(
@@ -200,7 +287,7 @@ class StudentCurriculumService:
                 approved_at=context.approved_at,
             ),
             chapters=tuple(
-                self._chapter_projection(chapter, context)
+                StudentCurriculumService._chapter_projection(chapter, context)
                 for chapter in sorted(context.chapters, key=lambda item: (item.sequence, item.id))
             ),
         )

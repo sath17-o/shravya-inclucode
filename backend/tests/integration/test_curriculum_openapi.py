@@ -22,6 +22,8 @@ CURRICULUM_PATHS = {
     "/api/v1/teacher/transcript-revisions/{revision_id}/quality-assessment": "post",
     "/api/v1/teacher/transcript-revisions/{revision_id}/approve": "post",
     "/api/v1/student/courses/{course_id}/lesson-overview": "get",
+    "/api/v1/student/courses/{course_id}/revisions": "get",
+    "/api/v1/student/courses/{course_id}/revisions/{context_id}": "get",
 }
 
 
@@ -57,6 +59,16 @@ def test_curriculum_openapi_contract_is_typed_and_has_no_out_of_scope_routes() -
     assert "misrecognitions" in components["GlossaryTermResponse"]["properties"]
     assert "teacher_review_status" not in components["StudentTranscriptResponse"]["properties"]
     assert "teacher_review_status" in components["TranscriptRevisionResponse"]["properties"]
+    revision_properties = components["StudentRevisionSummaryResponse"]["properties"]
+    assert set(revision_properties) == {
+        "context_id",
+        "version_number",
+        "approved_at",
+        "chapter_title",
+        "lesson_title",
+        "is_current",
+    }
+    assert "teacher_review_status" not in revision_properties
     assert len(components) == len(set(components))
     assert not {"Course", "Lesson", "GeneratedArtifact", "ContextReviewEvent"} & set(components)
     assert not any(

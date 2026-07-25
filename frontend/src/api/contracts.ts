@@ -144,3 +144,12 @@ export type StudentOverview = {
   approved_at: string | null;
   chapters: StudentChapter[];
 };
+export type StudentRevisionSummary = {
+  context_id: string;
+  version_number: number;
+  approved_at: string;
+  chapter_title: string;
+  lesson_title: string;
+  is_current: boolean;
+};
+export type StudentRevisionLibrary = { course: Course; revisions: StudentRevisionSummary[] };

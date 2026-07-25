@@ -79,6 +79,26 @@ async function mockJudgeApi(page: Page) {
       termDecision = "CONFIRMED";
       return route.fulfill(json({ status: "success", data: audioSummary(v2).latest_revision }));
     }
+    if (url.endsWith(`/student/courses/${courseId}/revisions`)) {
+      const approvedVersions = v2Status === "APPROVED" ? [2, 1] : [1];
+      return route.fulfill(json({ status: "success", data: {
+        course,
+        revisions: approvedVersions.map((version) => ({
+          context_id: version === 1 ? v1 : v2,
+          version_number: version,
+          approved_at: "2026-07-16T09:05:00Z",
+          chapter_title: "Nutrition in Plants",
+          lesson_title: "Photosynthesis in Plants",
+          is_current: version === Math.max(...approvedVersions),
+        })),
+      } }));
+    }
+    const revisionContextId = url.match(/\/student\/courses\/[^/]+\/revisions\/([^/]+)$/)?.[1];
+    if (revisionContextId) {
+      const version = revisionContextId === v1 ? 1 : revisionContextId === v2 && v2Status === "APPROVED" ? 2 : null;
+      if (version) return route.fulfill(json({ status: "success", data: { course, is_ready: true, selected_context_id: revisionContextId, version_number: version, approved_at: "2026-07-16T09:05:00Z", chapters: [{ id: "chapter", title: "Nutrition in Plants", sequence: 1, lessons: [lesson(version)] }] } }));
+      return route.fulfill(json({ status: "error", code: "student_revision_not_found", message: "not found", message_key: "student.revision_not_found", details: {}, recoverable: true, next_actions: [], job_id: null }, 404));
+    }
     if (url.endsWith(`/student/courses/${courseId}/lesson-overview`)) return route.fulfill(json({ status: "success", data: { course, is_ready: true, selected_context_id: studentVersion === 1 ? v1 : v2, version_number: studentVersion, approved_at: "2026-07-16T09:05:00Z", chapters: [{ id: "chapter", title: "Nutrition in Plants", sequence: 1, lessons: [lesson(studentVersion)] }] } }));
     const contextId = url.match(/\/teacher\/contexts\/([^/]+)/)?.[1];
     if (contextId && method === "POST" && url.endsWith("/submit-for-review")) {
@@ -238,6 +258,55 @@ test("judge flow shows teacher control, stale protection, and the approved v1-to
   await expect(page.getByText("Trusted version 2")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Improved teacher explanation" })).toBeVisible();
   await expect(page.getByText("Improved classroom question")).toBeVisible();
+});
+
+test("Revision lists approved versions and opens a historical Focus Journey", async ({ page }) => {
+  await mockJudgeApi(page);
+  await page.goto("/student/revisions");
+  await expect(page.getByText("Trusted version 1")).toBeVisible();
+  await expect(page.getByText("Trusted version 2")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Teacher" }).click();
+  await page.getByRole("button", { name: /Version 2/ }).click();
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await page.getByRole("button", { name: "Approve trusted version" }).click();
+
+  await page.getByRole("link", { name: "Revision" }).click();
+  const cards = page.locator(".revision-card");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText("Trusted version 2");
+  await expect(cards.nth(0)).toContainText("Current");
+  await expect(cards.nth(1)).toContainText("Trusted version 1");
+  await page.getByRole("link", { name: "Open Photosynthesis in Plants revision approved 16 Jul 2026" }).nth(1).click();
+  await expect(page.getByText("Teacher-approved revision")).toBeVisible();
+  await expect(page.getByText("Trusted version 1")).toBeVisible();
+  await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await expect(page).toHaveURL(`/student/revisions/${v1}/focus`);
+  await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
+});
+
+test("real backend Revision keeps historical approved context separate from the current lesson", async ({ page }) => {
+  await page.goto("/student/revisions");
+  await expect(page.getByRole("heading", { name: "Revision" })).toBeVisible();
+  await expect(page.locator(".revision-card")).toHaveCount(1);
+  await expect(page.getByText("Trusted version 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Teacher" }).click();
+  await page.getByRole("button", { name: /Version 2/ }).click();
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await page.getByRole("button", { name: "Approve trusted version" }).click();
+
+  await page.getByRole("link", { name: "Revision" }).click();
+  const cards = page.locator(".revision-card");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText("Trusted version 2");
+  await expect(cards.nth(0)).toContainText("Current");
+  await page.getByRole("link", { name: /Open .* revision approved/ }).nth(1).click();
+  await expect(page.getByText("Teacher-approved revision")).toBeVisible();
+  await expect(page.getByText("Trusted version 1")).toBeVisible();
+  await page.getByRole("button", { name: "Start Focus Journey" }).click();
+  await expect(page).toHaveURL(/\/student\/revisions\/.+\/focus$/);
+  await expect(page.getByRole("heading", { name: "How should Shravya support you right now?" })).toBeVisible();
 });
 
 test("teacher and student layouts remain usable at judge viewport widths", async ({ page }) => {

@@ -1,4 +1,5 @@
 from dataclasses import fields, is_dataclass
+from datetime import datetime
 
 import pytest
 
@@ -166,6 +167,73 @@ def test_student_service_selects_highest_approved_and_handles_not_ready_and_unkn
         assert not_ready.context is None and not_ready.chapters == ()
         with pytest.raises(DomainError, match="course_not_found"):
             service.get_curriculum_projection("missing")
+
+
+def test_student_revision_service_scopes_each_approved_context_and_current_marker(
+    migrated_api,
+) -> None:
+    with migrated_api.session_factory() as session:
+        first = complete_photosynthesis_context(
+            session, version_number=1, status=TeacherReviewStatus.APPROVED
+        )
+        first.context.approved_at = datetime(2026, 7, 18)
+        second = complete_photosynthesis_context(
+            session,
+            course_model=first.course,
+            version_number=2,
+            status=TeacherReviewStatus.APPROVED,
+        )
+        second.context.approved_at = datetime(2026, 7, 15)
+        draft = complete_photosynthesis_context(
+            session,
+            course_model=first.course,
+            version_number=3,
+            status=TeacherReviewStatus.DRAFT,
+        )
+        session.commit()
+        service = StudentCurriculumService(CurriculumRepository(session))
+        library = service.get_revision_library(first.course.id)
+        detail = service.get_approved_revision_projection(first.course.id, first.context.id)
+        with pytest.raises(DomainError, match="student_revision_not_found"):
+            service.get_approved_revision_projection(first.course.id, draft.context.id)
+        first_id = first.context.id
+        second_id = second.context.id
+
+    assert [item.context_id for item in library.revisions] == [first_id, second_id]
+    assert [item.is_current for item in library.revisions] == [False, True]
+    assert detail.context is not None and detail.context.id == first.context.id
+    assert detail.chapters[0].lessons[0].title == "Plants make food"
+    assert_scalar_only(library)
+
+
+def test_student_revision_library_uses_the_first_chapter_that_contains_a_lesson(
+    migrated_api,
+) -> None:
+    with migrated_api.session_factory() as session:
+        complete = complete_photosynthesis_context(
+            session, version_number=1, status=TeacherReviewStatus.APPROVED
+        )
+        complete.context.approved_at = datetime(2026, 7, 18)
+        complete.chapter.sequence = 2
+        session.add(
+            Chapter(
+                context_version=complete.context,
+                title="Empty introduction",
+                sequence=1,
+            )
+        )
+        session.commit()
+        service = StudentCurriculumService(CurriculumRepository(session))
+        library = service.get_revision_library(complete.course.id)
+        detail = service.get_approved_revision_projection(complete.course.id, complete.context.id)
+        expected_chapter_title = complete.chapter.title
+        expected_lesson_title = complete.lesson.title
+
+    assert len(library.revisions) == 1
+    assert library.revisions[0].chapter_title == expected_chapter_title
+    assert library.revisions[0].lesson_title == expected_lesson_title
+    assert detail.chapters[0].lessons == ()
+    assert detail.chapters[1].lessons[0].title == expected_lesson_title
 
 
 def _transcript_revision(

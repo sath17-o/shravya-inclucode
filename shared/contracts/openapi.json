@@ -2052,6 +2052,64 @@
         "title": "StudentRecoverySupportResponse",
         "type": "object"
       },
+      "StudentRevisionLibraryResponse": {
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/CourseResponse"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/StudentRevisionSummaryResponse"
+            },
+            "title": "Revisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course"
+        ],
+        "title": "StudentRevisionLibraryResponse",
+        "type": "object"
+      },
+      "StudentRevisionSummaryResponse": {
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "chapter_title": {
+            "title": "Chapter Title",
+            "type": "string"
+          },
+          "context_id": {
+            "title": "Context Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "lesson_title": {
+            "title": "Lesson Title",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "context_id",
+          "version_number",
+          "approved_at",
+          "chapter_title",
+          "lesson_title",
+          "is_current"
+        ],
+        "title": "StudentRevisionSummaryResponse",
+        "type": "object"
+      },
       "StudentTermAliasResponse": {
         "properties": {
           "alias": {
@@ -2370,6 +2428,24 @@
           "data"
         ],
         "title": "SuccessResponse[StudentLessonOverviewResponse]",
+        "type": "object"
+      },
+      "SuccessResponse_StudentRevisionLibraryResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StudentRevisionLibraryResponse"
+          },
+          "status": {
+            "const": "success",
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[StudentRevisionLibraryResponse]",
         "type": "object"
       },
       "SuccessResponse_SubmitResponse_": {
@@ -3162,6 +3238,179 @@
           }
         },
         "summary": "Overview",
+        "tags": [
+          "curriculum"
+        ]
+      }
+    },
+    "/api/v1/student/courses/{course_id}/revisions": {
+      "get": {
+        "operationId": "student_revision_library",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "title": "Course Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StudentRevisionLibraryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested action is not permitted."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested curriculum record was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum context is in a conflicting state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum request could not be completed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "summary": "Revision Library",
+        "tags": [
+          "curriculum"
+        ]
+      }
+    },
+    "/api/v1/student/courses/{course_id}/revisions/{context_id}": {
+      "get": {
+        "operationId": "student_revision_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "title": "Course Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "context_id",
+            "required": true,
+            "schema": {
+              "title": "Context Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StudentLessonOverviewResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested action is not permitted."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The requested curriculum record was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum context is in a conflicting state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The curriculum request could not be completed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected error occurred."
+          }
+        },
+        "summary": "Revision Detail",
         "tags": [
           "curriculum"
         ]

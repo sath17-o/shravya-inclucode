@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { AudioWorkflowSummary, Chapter, Completeness, ContextDetail, ContextSummary, Lesson, StudentChapter, StudentLesson, StudentOverview } from "../api/contracts";
+import type { AudioWorkflowSummary, Chapter, Completeness, ContextDetail, ContextSummary, Lesson, StudentChapter, StudentLesson, StudentOverview, StudentRevisionLibrary } from "../api/contracts";
 import { PHOTOSYNTHESIS_DEMO_COURSE_ID } from "../demo/config";
 
 export const course = { id: PHOTOSYNTHESIS_DEMO_COURSE_ID, title: "Class 7 Science", subject: "Science", class_level: 7, grade_band: "5-7" };
@@ -96,6 +96,22 @@ function overview(version: number, approvedTranscript = false, transformStudentL
   return { course, is_ready: true, selected_context_id: selectedContextId ?? selected.id, version_number: version, approved_at: selected.approved_at, chapters };
 }
 
+function revisionLibrary(v2Status: ContextSummary["teacher_review_status"]): StudentRevisionLibrary {
+  const approved = [context(1, "APPROVED"), ...(v2Status === "APPROVED" ? [context(2, "APPROVED")] : [])]
+    .sort((first, second) => second.version_number - first.version_number);
+  return {
+    course,
+    revisions: approved.map((item) => ({
+      context_id: item.id,
+      version_number: item.version_number,
+      approved_at: item.approved_at!,
+      chapter_title: "Nutrition in Plants",
+      lesson_title: "Photosynthesis in Plants",
+      is_current: item.version_number === Math.max(...approved.map((contextItem) => contextItem.version_number)),
+    })),
+  };
+}
+
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
@@ -135,7 +151,14 @@ export function createCurriculumFetch(
     const method = init?.method ?? "GET";
     if (options.fail) return response({ status: "error", code: "INTERNAL_ERROR", message: "SELECT * FROM private C:\\secrets", message_key: "error.internal", details: {}, recoverable: false, next_actions: [], job_id: null }, 500);
     if (url.endsWith(`/teacher/courses/${course.id}/contexts`)) return response({ status: "success", data: [context(1, "APPROVED"), context(2, v2Status)] });
+    if (url.endsWith(`/student/courses/${course.id}/revisions`)) return response({ status: "success", data: revisionLibrary(v2Status) });
     if (url.endsWith(`/student/courses/${course.id}/lesson-overview`)) return response({ status: "success", data: options.notReady ? { course, is_ready: false, selected_context_id: null, version_number: null, approved_at: null, chapters: [] } : overview(studentVersion, options.approvedTranscript, options.transformStudentLesson, options.studentContextId) });
+    const revisionContextId = url.match(/\/student\/courses\/[^/]+\/revisions\/([^/]+)$/)?.[1];
+    if (revisionContextId) {
+      const version = revisionContextId === v1 ? 1 : revisionContextId === v2 && v2Status === "APPROVED" ? 2 : null;
+      if (version) return response({ status: "success", data: overview(version, options.approvedTranscript, options.transformStudentLesson, revisionContextId) });
+      return response({ status: "error", code: "student_revision_not_found", message: "not found", message_key: "student.revision_not_found", details: {}, recoverable: true, next_actions: [], job_id: null }, 404);
+    }
     const contextId = url.match(/\/teacher\/contexts\/([^/]+)/)?.[1];
     const audioContextId = url.match(/\/curriculum\/context-versions\/([^/]+)\/audio-workflow/)?.[1];
     if (contextId && method === "POST" && url.endsWith("/submit-for-review")) {

@@ -282,6 +282,20 @@ class StudentLessonOverviewResponse(BaseModel):
     chapters: list[StudentChapterResponse] = Field(default_factory=list)
 
 
+class StudentRevisionSummaryResponse(BaseModel):
+    context_id: str
+    version_number: int
+    approved_at: datetime
+    chapter_title: str
+    lesson_title: str
+    is_current: bool
+
+
+class StudentRevisionLibraryResponse(BaseModel):
+    course: CourseResponse
+    revisions: list[StudentRevisionSummaryResponse] = Field(default_factory=list)
+
+
 class RecordingResponse(BaseModel):
     id: str
     lesson_id: str

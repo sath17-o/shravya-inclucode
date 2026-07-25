@@ -217,6 +217,18 @@ def student_chapters(projections):
     ]
 
 
+def student_overview_response(projection):
+    base = CourseResponse.model_validate(projection.course, from_attributes=True)
+    return StudentLessonOverviewResponse(
+        course=base,
+        is_ready=projection.context is not None,
+        selected_context_id=projection.context.id if projection.context else None,
+        version_number=projection.context.version_number if projection.context else None,
+        approved_at=projection.context.approved_at if projection.context else None,
+        chapters=student_chapters(projection.chapters),
+    )
+
+
 def recording_response(recording):
     return RecordingResponse(
         id=recording.id,
@@ -769,14 +781,40 @@ def overview(
     svc: Annotated[StudentCurriculumService, Depends(get_student)],
 ):
     projection = svc.get_curriculum_projection(course_id)
-    base = CourseResponse.model_validate(projection.course, from_attributes=True)
+    return SuccessResponse(data=student_overview_response(projection))
+
+
+@router.get(
+    "/student/courses/{course_id}/revisions",
+    response_model=SuccessResponse[StudentRevisionLibraryResponse],
+    operation_id="student_revision_library",
+)
+def revision_library(
+    course_id: str,
+    svc: Annotated[StudentCurriculumService, Depends(get_student)],
+):
+    projection = svc.get_revision_library(course_id)
     return SuccessResponse(
-        data=StudentLessonOverviewResponse(
-            course=base,
-            is_ready=projection.context is not None,
-            selected_context_id=projection.context.id if projection.context else None,
-            version_number=projection.context.version_number if projection.context else None,
-            approved_at=projection.context.approved_at if projection.context else None,
-            chapters=student_chapters(projection.chapters),
+        data=StudentRevisionLibraryResponse(
+            course=CourseResponse.model_validate(projection.course, from_attributes=True),
+            revisions=[
+                StudentRevisionSummaryResponse.model_validate(item, from_attributes=True)
+                for item in projection.revisions
+            ],
         )
+    )
+
+
+@router.get(
+    "/student/courses/{course_id}/revisions/{context_id}",
+    response_model=SuccessResponse[StudentLessonOverviewResponse],
+    operation_id="student_revision_detail",
+)
+def revision_detail(
+    course_id: str,
+    context_id: str,
+    svc: Annotated[StudentCurriculumService, Depends(get_student)],
+):
+    return SuccessResponse(
+        data=student_overview_response(svc.get_approved_revision_projection(course_id, context_id))
     )

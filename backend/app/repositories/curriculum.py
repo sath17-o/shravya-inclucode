@@ -33,7 +33,8 @@ class CurriculumRepository:
     def get_context_version(self, context_version_id: str) -> CourseContextVersion | None:
         return self._session.get(CourseContextVersion, context_version_id)
 
-    def get_context_with_graph(self, context_version_id: str) -> CourseContextVersion | None:
+    @staticmethod
+    def _context_graph_options():
         lesson_options = (
             selectinload(CourseContextVersion.chapters)
             .selectinload(Chapter.lessons)
@@ -55,16 +56,19 @@ class CurriculumRepository:
                 .selectinload(TranscriptRevision.quality_assessments),
             )
         )
+        return (
+            lesson_options,
+            selectinload(CourseContextVersion.concept_glossary_term_links),
+            selectinload(CourseContextVersion.recovery_packs).selectinload(
+                ConceptRecoveryPack.concept
+            ),
+        )
+
+    def get_context_with_graph(self, context_version_id: str) -> CourseContextVersion | None:
         statement = (
             select(CourseContextVersion)
             .where(CourseContextVersion.id == context_version_id)
-            .options(
-                lesson_options,
-                selectinload(CourseContextVersion.concept_glossary_term_links),
-                selectinload(CourseContextVersion.recovery_packs).selectinload(
-                    ConceptRecoveryPack.concept
-                ),
-            )
+            .options(*self._context_graph_options())
         )
         return self._session.scalar(statement)
 
@@ -94,6 +98,38 @@ class CurriculumRepository:
         )
         context = self._session.scalar(statement)
         return self.get_context_with_graph(context.id) if context is not None else None
+
+    def list_approved_contexts_with_graph(self, course_id: str) -> list[CourseContextVersion]:
+        statement = (
+            select(CourseContextVersion)
+            .where(
+                CourseContextVersion.course_id == course_id,
+                CourseContextVersion.teacher_review_status == TeacherReviewStatus.APPROVED,
+                CourseContextVersion.approved_at.is_not(None),
+            )
+            .order_by(
+                CourseContextVersion.approved_at.desc(),
+                CourseContextVersion.version_number.desc(),
+                CourseContextVersion.id.desc(),
+            )
+            .options(*self._context_graph_options())
+        )
+        return list(self._session.scalars(statement))
+
+    def get_approved_context_for_course_with_graph(
+        self, course_id: str, context_version_id: str
+    ) -> CourseContextVersion | None:
+        statement = (
+            select(CourseContextVersion)
+            .where(
+                CourseContextVersion.id == context_version_id,
+                CourseContextVersion.course_id == course_id,
+                CourseContextVersion.teacher_review_status == TeacherReviewStatus.APPROVED,
+                CourseContextVersion.approved_at.is_not(None),
+            )
+            .options(*self._context_graph_options())
+        )
+        return self._session.scalar(statement)
 
     def list_student_visible_approved_lessons(self, course_id: str) -> list[Lesson]:
         context = self.get_highest_approved_context(course_id)

@@ -406,12 +406,6 @@ The next phase is structured learner and classroom validation:
 
 ---
 
-## Team jaiRAM
-
-- **Sath Sree Hari K** — Project Lead
-- **Rahul M J** — AI Backend Lead
-- **Rasin John** — Testing Lead
-
 Built for **INCLUCODE 2026 — Inclusive Software Innovation Buildathon**.
 
 ---
